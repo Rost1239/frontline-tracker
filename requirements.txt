@@ -1,0 +1,5 @@
+flask>=3.0
+gunicorn>=21.2
+requests>=2.31
+shapely>=2.0
+pyproj>=3.6

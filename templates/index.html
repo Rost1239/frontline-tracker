@@ -1,0 +1,1893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ukraine Frontline Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #1c2129; --bg4: #21262d;
+  --t: #e6edf3; --t2: #8b949e; --t3: #484f58;
+  --bd: rgba(139,148,158,.12);
+  --ac: #f0b429; --red: #da3633; --red-dim: #b33a22;
+  --green: #3fb950; --green-dim: #2ea043;
+  --blue: #58a6ff; --orange: #d29922; --purple: #bc8cff;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Inter', -apple-system, sans-serif;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--sans); background: var(--bg); color: var(--t); overflow: hidden; }
+#map { position: absolute; inset: 0; z-index: 1; }
+
+/* Split mode */
+body.split-mode #map { right: 50%; }
+body.split-mode #map2 { display: block; }
+#map2 {
+  display: none; position: absolute; top: 0; left: 50%; right: 0; bottom: 0; z-index: 1;
+  border-left: 2px solid var(--ac);
+}
+
+.panel {
+  position: absolute; z-index: 1000;
+  background: rgba(22,27,34,.94);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0,0,0,.5);
+}
+
+/* ═══ Title ═══ */
+.title-panel { top: 12px; left: 12px; padding: 11px 14px; width: 275px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.title-panel::-webkit-scrollbar { width: 3px; }
+.title-panel::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+.title-panel h1 {
+  font-size: .88rem; font-weight: 600; letter-spacing: -.02em;
+  display: flex; align-items: center; gap: 7px;
+}
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  box-shadow: 0 0 6px var(--green); animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+.title-panel .sub { font-size: .58rem; color: var(--t3); margin-top: 2px; }
+
+.controls { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.ctrl-row {
+  display: flex; align-items: center; gap: 6px; font-size: .62rem; color: var(--t2);
+  padding: 3px 6px; border-radius: 4px; cursor: pointer; user-select: none;
+}
+.ctrl-row:hover { background: var(--bg3); }
+.ctrl-row input, .ctrl-row select { accent-color: var(--ac); }
+.ctrl-row select {
+  background: var(--bg3); border: 1px solid var(--bd); color: var(--t2);
+  font-size: .58rem; border-radius: 3px; padding: 1px 3px; font-family: var(--mono);
+}
+.ctrl-divider { border-top: 1px solid var(--bd); margin: 4px 0; }
+
+.basemap-row { display: flex; gap: 4px; margin-top: 6px; }
+.basemap-btn {
+  flex: 1; background: var(--bg3); border: 1px solid var(--bd);
+  color: var(--t2); font-size: .58rem; font-family: var(--mono);
+  padding: 4px 6px; border-radius: 4px; cursor: pointer; text-align: center;
+  transition: .12s;
+}
+.basemap-btn:hover { border-color: var(--ac); color: var(--ac); }
+.basemap-btn.active { border-color: var(--ac); color: var(--ac); background: rgba(240,180,41,.08); }
+
+.links { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--bd); font-size: .55rem; color: var(--t3); }
+.links a { color: var(--t2); text-decoration: none; }
+.links a:hover { color: var(--ac); }
+
+/* ═══ Info panel ═══ */
+.info-panel { top: 12px; right: 12px; padding: 11px 14px; width: 290px; max-height: calc(100vh - 80px); overflow-y: auto; }
+.info-panel::-webkit-scrollbar { width: 3px; }
+.info-panel::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+.sh { font-size: .54rem; text-transform: uppercase; letter-spacing: .1em; color: var(--t3); margin-bottom: 4px; font-weight: 500; }
+.mr { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--bd); }
+.mr:last-child { border-bottom: 0; }
+.ml { font-size: .66rem; color: var(--t2); }
+.mv { font-size: .66rem; font-weight: 600; font-family: var(--mono); }
+.v-red { color: var(--red); } .v-green { color: var(--green); } .v-gold { color: var(--ac); }
+.v-blue { color: var(--blue); } .v-dim { color: var(--t3); } .v-purple { color: var(--purple); }
+.is { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--bd); }
+.dt { display: flex; gap: 6px; margin-top: 3px; }
+.dt label { display: flex; align-items: center; gap: 3px; font-size: .58rem; color: var(--t2); cursor: pointer; }
+.dt input { accent-color: var(--ac); }
+
+/* Charts */
+.cs { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--bd); }
+.cs h3 { font-size: .54rem; text-transform: uppercase; letter-spacing: .1em; color: var(--t3); margin-bottom: 3px; }
+.cc { position: relative; }
+.cc canvas { width: 100%; display: block; }
+.cl { font-family: var(--mono); font-size: .48rem; color: var(--t3); display: flex; justify-content: space-between; margin-top: 1px; }
+.ct {
+  position: absolute; background: var(--bg2); border: 1px solid var(--bd);
+  border-radius: 3px; padding: 3px 6px; font-size: .56rem; color: var(--t);
+  font-family: var(--mono); pointer-events: none; opacity: 0; transition: opacity .12s;
+  white-space: nowrap; z-index: 10;
+}
+
+/* City distances */
+.city-grid { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; }
+.city-name { font-size: .62rem; color: var(--t2); }
+.city-dist { font-size: .62rem; font-family: var(--mono); font-weight: 600; }
+.city-dist.occupied { color: var(--red); }
+.city-dist.close { color: var(--orange); }
+.city-dist.safe { color: var(--t3); }
+
+/* Export */
+.export-row { display: flex; gap: 5px; margin-top: 6px; }
+.export-btn {
+  flex: 1; background: var(--bg3); border: 1px solid var(--bd);
+  color: var(--t2); font-size: .56rem; font-family: var(--mono);
+  padding: 4px; border-radius: 4px; cursor: pointer; text-align: center;
+  text-decoration: none; transition: .12s;
+}
+.export-btn:hover { border-color: var(--ac); color: var(--ac); }
+
+/* ═══ Timeline ═══ */
+.timeline-panel {
+  bottom: 12px; left: 50%; transform: translateX(-50%);
+  padding: 7px 12px;
+  display: flex; align-items: center; gap: 7px;
+  min-width: 560px; max-width: 85vw;
+}
+.tb {
+  width: 27px; height: 27px; border-radius: 5px; border: 1px solid var(--bd);
+  background: var(--bg3); color: var(--t2); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: .12s; flex-shrink: 0;
+}
+.tb:hover { border-color: var(--ac); color: var(--ac); }
+.tb:active { transform: scale(.95); }
+.tb svg { width: 11px; height: 11px; fill: currentColor; }
+.tb.active { border-color: var(--ac); color: var(--ac); background: rgba(240,180,41,.08); }
+
+.tl-slider {
+  flex: 1; -webkit-appearance: none; height: 3px;
+  background: var(--bg); border-radius: 2px; outline: none;
+}
+.tl-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--ac); cursor: pointer; border: 2px solid var(--bg2);
+  box-shadow: 0 0 6px rgba(240,180,41,.25);
+}
+.dd { font-family: var(--mono); font-size: .74rem; color: var(--ac); min-width: 78px; text-align: center; font-weight: 500; }
+.te { font-family: var(--mono); font-size: .54rem; color: var(--t3); white-space: nowrap; }
+.sb {
+  font-family: var(--mono); font-size: .5rem; color: var(--t3);
+  background: var(--bg); padding: 2px 4px; border-radius: 3px; cursor: pointer;
+}
+.sb:hover { color: var(--ac); }
+
+/* ═══ Split date label ═══ */
+.split-label {
+  position: absolute; top: 50px; z-index: 1001;
+  background: var(--bg2); border: 1px solid var(--ac);
+  border-radius: 4px; padding: 4px 10px;
+  font-family: var(--mono); font-size: .7rem; color: var(--ac);
+  font-weight: 600;
+}
+#splitLabelL { left: 12px; display: none; }
+#splitLabelR { right: 12px; display: none; }
+
+/* ═══ Measure overlay ═══ */
+.measure-result {
+  position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+  z-index: 2000; background: var(--bg2); border: 1px solid var(--ac);
+  border-radius: 6px; padding: 6px 14px;
+  font-family: var(--mono); font-size: .72rem; color: var(--ac);
+  display: none;
+}
+
+/* ═══ Legend ═══ */
+.legend-panel { bottom: 54px; right: 12px; padding: 7px 10px; }
+.li { display: flex; align-items: center; gap: 6px; font-size: .58rem; color: var(--t2); padding: 1px 0; }
+.ls { width: 14px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+
+/* ═══ Loading / Toast ═══ */
+.lo {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 2000; background: var(--bg2); border: 1px solid var(--bd);
+  border-radius: 8px; padding: 14px 22px; text-align: center;
+  pointer-events: none; opacity: 0; transition: opacity .2s;
+}
+.lo.show { opacity: 1; }
+.sp { width: 16px; height: 16px; border: 2px solid var(--bd); border-top-color: var(--ac); border-radius: 50%; animation: spin .6s linear infinite; margin: 0 auto 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.lo p { font-size: .68rem; color: var(--t2); }
+.toast {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 3000; background: var(--bg2); border: 1px solid var(--bd);
+  border-radius: 5px; padding: 5px 12px; font-size: .66rem; color: var(--t2);
+  opacity: 0; transition: opacity .25s; pointer-events: none;
+}
+.toast.show { opacity: 1; } .toast.error { border-color: var(--red); color: var(--red); }
+
+/* ═══ Leaflet ═══ */
+.leaflet-control-zoom a {
+  background: var(--bg2) !important; color: var(--t) !important;
+  border-color: var(--bd) !important; width: 27px !important; height: 27px !important;
+  line-height: 27px !important; font-size: 13px !important;
+}
+.leaflet-control-zoom a:hover { background: var(--bg3) !important; color: var(--ac) !important; }
+.leaflet-control-attribution { background: rgba(13,17,23,.7) !important; color: var(--t3) !important; font-size: .5rem !important; }
+.leaflet-control-attribution a { color: var(--t2) !important; }
+
+/* ═══ Key dates markers on slider ═══ */
+.key-date-markers {
+  position: absolute; bottom: 20px; left: 0; right: 0; height: 12px; pointer-events: none;
+}
+.key-marker {
+  position: absolute; width: 2px; height: 8px; background: var(--purple);
+  opacity: .6; border-radius: 1px; transform: translateX(-50%);
+}
+.key-marker::after {
+  content: attr(data-label); position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  font-size: .42rem; color: var(--purple); white-space: nowrap; font-family: var(--mono);
+  opacity: 0; transition: opacity .15s;
+}
+.timeline-panel:hover .key-marker::after { opacity: 1; }
+
+.kbd-hints {
+  position: absolute; bottom: 54px; left: 12px; z-index: 1000;
+  font-size: .5rem; color: var(--t3); line-height: 1.5;
+}
+.kbd { background: var(--bg3); padding: 0 3px; border-radius: 2px; font-family: var(--mono); border: 1px solid var(--bd); }
+
+/* ═══ War ticker ═══ */
+.war-ticker {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 1001;
+  background: rgba(13,17,23,.85); border-bottom: 1px solid var(--bd);
+  padding: 4px 16px; display: flex; align-items: center; justify-content: center;
+  gap: 24px; font-family: var(--mono); font-size: .6rem; backdrop-filter: blur(8px);
+}
+.war-ticker .tick-item { color: var(--t2); white-space: nowrap; }
+.war-ticker .tick-val { color: var(--t); font-weight: 600; }
+.war-ticker .tick-val.red { color: var(--red); }
+.war-ticker .tick-val.green { color: var(--green); }
+.war-ticker .tick-val.gold { color: var(--ac); }
+body .title-panel { top: 32px; }
+body .info-panel { top: 32px; }
+body .split-label { top: 70px; }
+
+/* ═══ Oblast bars ═══ */
+.oblast-bars { margin-top: 4px; }
+.oblast-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: .6rem; }
+.oblast-name { width: 70px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.oblast-bar-bg { flex: 1; height: 8px; background: var(--bg); border-radius: 2px; overflow: hidden; }
+.oblast-bar-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+.oblast-pct { width: 38px; text-align: right; font-family: var(--mono); font-weight: 600; font-size: .58rem; flex-shrink: 0; }
+
+/* ═══ Frontline pulse ═══ */
+@keyframes dash-march { to { stroke-dashoffset: -24; } }
+.frontline-pulse { animation: dash-march 1.2s linear infinite; }
+
+/* ═══ Air raid alert indicator ═══ */
+.alert-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .58rem; font-family: var(--mono); font-weight: 600;
+  padding: 2px 7px; border-radius: 3px; animation: alert-flash 1s ease-in-out infinite;
+}
+.alert-badge.active { background: rgba(218,54,51,.15); color: var(--red); }
+.alert-badge.calm { background: rgba(63,185,80,.1); color: var(--green); }
+@keyframes alert-flash { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+.alert-dot { width: 6px; height: 6px; border-radius: 50%; }
+.alert-dot.full { background: var(--red); box-shadow: 0 0 6px var(--red); }
+.alert-dot.partial { background: var(--orange); box-shadow: 0 0 4px var(--orange); }
+
+.alert-list { margin-top: 4px; }
+.alert-row { display: flex; align-items: center; gap: 6px; padding: 1px 0; font-size: .58rem; color: var(--t2); }
+.alert-row .oblast-name { width: 90px; }
+
+/* Weather cards */
+.weather-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
+.wx-card {
+  background: var(--bg3); border-radius: 4px; padding: 5px 7px; font-size: .56rem;
+}
+.wx-name { font-weight: 600; color: var(--t); margin-bottom: 2px; }
+.wx-temp { font-family: var(--mono); font-size: .7rem; font-weight: 600; }
+.wx-detail { color: var(--t3); font-size: .5rem; }
+
+/* ═══ GIF export modal ═══ */
+.gif-modal {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 3000; background: var(--bg2); border: 1px solid var(--bd);
+  border-radius: 8px; padding: 16px 20px; width: 280px; display: none;
+}
+.gif-modal h3 { font-size: .72rem; margin-bottom: 8px; }
+.gif-modal label { font-size: .62rem; color: var(--t2); display: block; margin: 4px 0; }
+.gif-modal input, .gif-modal select {
+  background: var(--bg3); border: 1px solid var(--bd); color: var(--t);
+  font-family: var(--mono); font-size: .62rem; border-radius: 4px; padding: 3px 6px; width: 100%;
+}
+.gif-progress { height: 4px; background: var(--bg); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.gif-progress-bar { height: 100%; background: var(--ac); width: 0; transition: width .1s; }
+
+@media (max-width: 900px) {
+  .info-panel, .kbd-hints { display: none; }
+  .timeline-panel { min-width: calc(100vw - 24px); }
+  .title-panel { max-width: calc(100vw - 24px); width: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ War Ticker ═══ -->
+<div class="war-ticker" id="warTicker">
+  <div class="tick-item">Day <span class="tick-val gold" id="tickDay">—</span> of invasion</div>
+  <div class="tick-item">Occupied: <span class="tick-val red" id="tickArea">—</span></div>
+  <div class="tick-item">Frontline: <span class="tick-val" id="tickFront">—</span></div>
+  <div class="tick-item">This week: <span class="tick-val" id="tickWeek">—</span></div>
+</div>
+
+<div id="map"></div>
+<div id="map2"></div>
+
+<!-- Split date labels -->
+<div class="split-label" id="splitLabelL"></div>
+<div class="split-label" id="splitLabelR"></div>
+
+<!-- Measure result -->
+<div class="measure-result" id="measureResult"></div>
+
+<!-- ═══ Title + Controls ═══ -->
+<div class="panel title-panel">
+  <h1><span class="live-dot"></span>Ukraine Frontline Tracker</h1>
+  <div class="sub">DeepState UA · full-fidelity polygons · daily updates</div>
+
+  <div class="controls">
+    <label class="ctrl-row"><input type="checkbox" id="showDiff" checked onchange="toggleDiffVis()"> Daily diff (gains / recaptures)</label>
+    <label class="ctrl-row">
+      <input type="checkbox" id="showHeatmap" onchange="toggleHeatmap()">
+      Change heatmap
+      <select id="heatmapDays" onchange="reloadHeatmap()">
+        <option value="7">7d</option><option value="14">14d</option>
+        <option value="30" selected>30d</option><option value="60">60d</option><option value="90">90d</option>
+      </select>
+    </label>
+    <div class="ctrl-divider"></div>
+    <label class="ctrl-row"><input type="checkbox" id="showCities" checked onchange="toggleCities()"> City distance markers</label>
+    <label class="ctrl-row"><input type="checkbox" id="measureMode" onchange="toggleMeasure()"> Measure tool (click 2 points)</label>
+    <label class="ctrl-row"><input type="checkbox" id="splitMode" onchange="toggleSplit()"> Side-by-side comparison</label>
+    <div class="ctrl-divider"></div>
+    <label class="ctrl-row">
+      <input type="checkbox" id="showFires" onchange="toggleFires()">
+      NASA FIRMS fire hotspots
+      <select id="firePeriod" onchange="reloadFires()">
+        <option value="24h" selected>24h</option><option value="48h">48h</option><option value="7d">7d</option>
+      </select>
+    </label>
+    <label class="ctrl-row"><input type="checkbox" id="showDisagreement" checked onchange="toggleDisagreement()"> Show DS/Divgen disagreement zones</label>
+    <label class="ctrl-row"><input type="checkbox" id="showGhosts" onchange="toggleGhosts()"> Ghost frontlines (30/90/180d)</label>
+    <label class="ctrl-row"><input type="checkbox" id="showSalients" onchange="toggleSalients()"> Salient detection</label>
+    <div class="ctrl-divider"></div>
+    <label class="ctrl-row"><input type="checkbox" id="showAlerts" onchange="toggleAlerts()"> Air raid alerts (live)</label>
+    <label class="ctrl-row"><input type="checkbox" id="showWeather" onchange="toggleWeather()"> Frontline weather</label>
+    <div class="ctrl-divider"></div>
+    <label class="ctrl-row"><input type="checkbox" id="showTerrain" onchange="toggleTerrain()"> Terrain / hillshade overlay</label>
+    <label class="ctrl-row"><input type="checkbox" id="showPulse" checked onchange="togglePulse()"> Animated frontline</label>
+  </div>
+
+  <div class="basemap-row">
+    <button class="basemap-btn active" id="bmDark" onclick="setBasemap('dark')">Dark</button>
+    <button class="basemap-btn" id="bmSat" onclick="setBasemap('satellite')">Satellite</button>
+    <button class="basemap-btn" id="bmLight" onclick="setBasemap('light')">Light</button>
+  </div>
+  <div class="basemap-row" style="margin-top:4px">
+    <button class="export-btn" onclick="shareURL()">Copy link</button>
+    <button class="export-btn" onclick="showGifModal()">Export GIF</button>
+  </div>
+
+  <div class="links">
+    <a href="https://deepstatemap.live/en" target="_blank">DeepState</a> ·
+    <a href="https://github.com/cyterat/deepstate-map-data" target="_blank">cyterat</a> ·
+    <a href="https://divgen.ru" target="_blank">divgen.ru</a>
+  </div>
+
+  <!-- Legend (inline) -->
+  <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--bd)">
+    <div class="li"><div class="ls" style="background:rgba(179,58,34,.5);border:1px solid rgba(224,64,48,.6)"></div>DS occupied (UA)</div>
+    <div class="li"><div class="ls" style="background:transparent;border:2px dashed rgba(188,140,255,.6)"></div>Divgen frontline (RU)</div>
+    <div class="li"><div class="ls" style="background:rgba(218,54,51,.65);border:1px solid #ff4444"></div>Daily gains</div>
+    <div class="li"><div class="ls" style="background:rgba(46,160,67,.55);border:1px solid #3fb950"></div>UA recaptured</div>
+    <div class="li" id="legendDSOnly" style="display:none"><div class="ls" style="background:rgba(218,54,51,.4);border:1px dashed rgba(218,54,51,.7)"></div>DS only (disagreement)</div>
+    <div class="li" id="legendDGOnly" style="display:none"><div class="ls" style="background:rgba(137,87,229,.4);border:1px dashed rgba(188,140,255,.7)"></div>Divgen only (RU extra)</div>
+    <div class="li" id="legendGhost30" style="display:none"><div class="ls" style="background:transparent;border:1px dashed rgba(240,180,41,.6)"></div>30d ago</div>
+    <div class="li" id="legendGhost90" style="display:none"><div class="ls" style="background:transparent;border:1px dashed rgba(188,140,255,.5)"></div>90d ago</div>
+    <div class="li" id="legendGhost180" style="display:none"><div class="ls" style="background:transparent;border:1px dashed rgba(88,166,255,.4)"></div>180d ago</div>
+    <div class="li" id="legendSalient" style="display:none"><div class="ls" style="background:rgba(255,100,0,.3);border:1px solid rgba(255,100,0,.6)"></div>Salient</div>
+    <div class="li" id="legendFire" style="display:none"><div class="ls" style="background:radial-gradient(circle,#ff6600,#ff000088);border-radius:50%"></div>FIRMS hotspot</div>
+    <div class="li" id="legendHG" style="display:none"><div class="ls" style="background:rgba(240,180,41,.4);border:1px solid rgba(240,180,41,.7)"></div>Heatmap gains</div>
+    <div class="li" id="legendHL" style="display:none"><div class="ls" style="background:rgba(88,166,255,.3);border:1px solid rgba(88,166,255,.6)"></div>Heatmap recaptured</div>
+  </div>
+</div>
+
+<!-- ═══ Info Panel (consolidated) ═══ -->
+<div class="panel info-panel" id="infoPanel">
+
+  <!-- ── Snapshot: DS | Divgen | Gap ── -->
+  <div class="mr"><span class="ml">Date</span><span class="mv v-gold" id="metricDate">—</span></div>
+  <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:.6rem">
+    <tr style="color:var(--t3);font-size:.48rem;text-transform:uppercase;letter-spacing:.08em">
+      <td></td><td style="text-align:right;color:var(--red)">DeepState</td><td style="text-align:right;color:var(--purple)">Divgen</td><td style="text-align:right;color:var(--t3)">Gap</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td class="ml">Occupied</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--red)" id="dsArea">—</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--purple)" id="dgArea">—</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600" id="gapArea">—</td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td class="ml">% of Ukraine</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--red)" id="dsPct">—</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--purple)" id="dgPct">—</td>
+      <td></td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td class="ml">Frontline</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600" id="dsFront">—</td>
+      <td colspan="2" style="text-align:right;font-family:var(--mono);font-size:.52rem;color:var(--t3)" id="dgFront"></td>
+    </tr>
+    <tr style="border-bottom:1px solid var(--bd)">
+      <td class="ml">7d rate</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600" id="rateDaily">—</td>
+      <td colspan="2" style="text-align:right;font-family:var(--mono);font-size:.52rem;color:var(--t3)" id="rate7d"></td>
+    </tr>
+  </table>
+  <div style="font-size:.48rem;color:var(--t3);margin-top:2px">Clipped to Divgen footprint (excl. Crimea <span id="cmpExcluded">—</span>)</div>
+
+  <!-- ── Daily change (dual source) ── -->
+  <div class="is" id="diffSection" style="display:none">
+    <h3 class="sh">Daily Change (km²)</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:.6rem">
+      <tr style="color:var(--t3);font-size:.48rem;text-transform:uppercase;letter-spacing:.08em">
+        <td></td><td style="text-align:right;color:var(--red)">DS</td><td style="text-align:right;color:var(--purple)">Divgen</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--bd)">
+        <td class="ml">RU gains</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--red)" id="diffDSGained">—</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--purple)" id="diffDGGained">—</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--bd)">
+        <td class="ml">UA recaptured</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--green)" id="diffDSLost">—</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--green)" id="diffDGLost">—</td>
+      </tr>
+      <tr>
+        <td class="ml">Net</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600" id="diffDSNet">—</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600" id="diffDGNet">—</td>
+      </tr>
+    </table>
+    <div class="dt">
+      <label><input type="checkbox" id="showGainedLayer" checked onchange="toggleDiffLayer('gained')"> Gains</label>
+      <label><input type="checkbox" id="showLostLayer" checked onchange="toggleDiffLayer('lost')"> Recaptured</label>
+    </div>
+  </div>
+
+  <!-- ── Source disagreement (compact) ── -->
+  <div class="is" id="disagreementSection" style="display:none">
+    <h3 class="sh">Source Disagreement</h3>
+    <div class="mr"><span class="ml">Both agree</span><span class="mv" id="cmpOverlap">—</span></div>
+    <div class="mr"><span class="ml">DS only</span><span class="mv v-red" id="cmpDSOnly">—</span></div>
+    <div class="mr"><span class="ml">Divgen only</span><span class="mv v-purple" id="cmpDGOnly">—</span></div>
+  </div>
+
+  <!-- ── Oblast occupation ── -->
+  <div class="is" id="oblastSection">
+    <h3 class="sh">Oblast Occupation</h3>
+    <div class="oblast-bars" id="oblastBars"></div>
+  </div>
+
+  <!-- ── Cities: distance + projections merged ── -->
+  <div class="is" id="citySection">
+    <h3 class="sh">Cities & Projections</h3>
+    <div id="cityGrid" class="city-grid"></div>
+    <div id="projGrid" style="margin-top:4px"></div>
+  </div>
+
+  <!-- ── Salients (only when toggled) ── -->
+  <div class="is" id="salientSection" style="display:none">
+    <h3 class="sh">Salients</h3>
+    <div class="mr"><span class="ml">Total</span><span class="mv" id="salientCount">—</span></div>
+    <div class="mr"><span class="ml">Largest</span><span class="mv v-red" id="salientLargest">—</span></div>
+    <div class="mr"><span class="ml">Most vulnerable</span><span class="mv v-red" id="salientVuln">—</span></div>
+  </div>
+
+  <!-- ── Charts ── -->
+  <div class="cs" id="areaChartSection" style="display:none">
+    <h3>Occupied Area — <span style="color:var(--red)">DS</span> vs <span style="color:var(--purple)">Divgen</span></h3>
+    <div class="cc">
+      <canvas id="areaChart" width="260" height="70"></canvas>
+      <div class="ct" id="areaTooltip"></div>
+    </div>
+    <div class="cl"><span id="chartStart">—</span><span id="chartEnd">—</span></div>
+  </div>
+
+  <div class="cs" id="rateChartSection" style="display:none">
+    <h3>Rate of Advance (km²/day)</h3>
+    <div class="cc"><canvas id="rateChart" width="260" height="50"></canvas></div>
+  </div>
+
+  <div class="cs" id="gapChartSection" style="display:none">
+    <h3>DS − Divgen Gap</h3>
+    <div class="cc"><canvas id="gapChart" width="260" height="50"></canvas></div>
+  </div>
+
+  <!-- ── Toggle-only sections ── -->
+  <div class="is" id="alertSection" style="display:none">
+    <h3 class="sh">Air Raid Alerts <span class="alert-badge" id="alertBadge"></span></h3>
+    <div class="alert-list" id="alertList"></div>
+  </div>
+
+  <div class="is" id="weatherSection" style="display:none">
+    <h3 class="sh">Frontline Weather</h3>
+    <div class="weather-grid" id="weatherGrid"></div>
+  </div>
+
+  <div class="is" id="fireSection" style="display:none">
+    <h3 class="sh">NASA FIRMS</h3>
+    <div class="mr"><span class="ml">Hotspots</span><span class="mv v-red" id="fireCount">—</span></div>
+    <div class="mr"><span class="ml">High FRP (>10MW)</span><span class="mv" id="fireHigh">—</span></div>
+    <div class="mr"><span class="ml">Avg FRP</span><span class="mv" id="fireAvg">—</span></div>
+  </div>
+
+  <div class="is" id="heatmapSection" style="display:none">
+    <h3 class="sh">Heatmap</h3>
+    <div class="mr"><span class="ml">Gained</span><span class="mv v-red" id="heatGained">—</span></div>
+    <div class="mr"><span class="ml">Recaptured</span><span class="mv v-green" id="heatLost">—</span></div>
+  </div>
+
+  <!-- ── Export ── -->
+  <div class="is">
+    <div class="export-row">
+      <a class="export-btn" href="/api/export/csv" download>CSV</a>
+      <a class="export-btn" href="/api/export/json" download>JSON</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Timeline ═══ -->
+<div class="panel timeline-panel" id="timelinePanel">
+  <button class="tb" onclick="stepDay(-7)" title="−7d"><svg viewBox="0 0 24 24"><path d="M18 18l-6-6 6-6M12 18l-6-6 6-6"/></svg></button>
+  <button class="tb" onclick="stepDay(-1)" title="−1d"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button class="tb" id="playBtn" onclick="togglePlay()" title="Play"><svg id="playIcon" viewBox="0 0 24 24"><polygon points="8,5 19,12 8,19"/></svg></button>
+  <button class="tb" onclick="stepDay(1)" title="+1d"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+  <button class="tb" onclick="stepDay(7)" title="+7d"><svg viewBox="0 0 24 24"><path d="M6 18l6-6-6-6M12 18l6-6-6-6"/></svg></button>
+  <span class="te" id="startLabel">—</span>
+  <div style="flex:1;position:relative">
+    <input type="range" class="tl-slider" id="daySlider" min="0" max="0" value="0" oninput="sliderInput(this.value)" style="width:100%">
+    <div class="key-date-markers" id="keyDateMarkers"></div>
+  </div>
+  <span class="dd" id="dateDisplay">loading...</span>
+  <span class="te" id="endLabel">—</span>
+  <span class="sb" id="speedBadge" onclick="cycleSpeed()">1d/1.2s</span>
+</div>
+
+<!-- ═══ Kbd hints ═══ -->
+<div class="kbd-hints">
+  <span class="kbd">←→</span> day <span class="kbd">⇧</span>+week
+  <span class="kbd">Space</span> play
+  <span class="kbd">H</span> heatmap <span class="kbd">D</span> diff
+  <span class="kbd">M</span> measure <span class="kbd">S</span> satellite
+  <span class="kbd">C</span> compare
+</div>
+
+<!-- GIF export modal -->
+<div class="gif-modal" id="gifModal">
+  <h3>Export Timelapse GIF</h3>
+  <label>Start index: <input type="number" id="gifStart" value="0" min="0"></label>
+  <label>End index: <input type="number" id="gifEnd" value="0"></label>
+  <label>Step (days): <input type="number" id="gifStep" value="7" min="1" max="30"></label>
+  <label>Delay (ms): <input type="number" id="gifDelay" value="200" min="50" max="2000"></label>
+  <div style="display:flex;gap:6px;margin-top:8px">
+    <button class="export-btn" onclick="startGifExport()" id="gifStartBtn">Generate</button>
+    <button class="export-btn" onclick="hideGifModal()">Cancel</button>
+  </div>
+  <div class="gif-progress" id="gifProgress" style="display:none"><div class="gif-progress-bar" id="gifBar"></div></div>
+  <p style="font-size:.55rem;color:var(--t3);margin-top:6px" id="gifStatus"></p>
+</div>
+
+<div class="lo" id="loading"><div class="sp"></div><p id="loadingText">Loading...</p></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// KEY DATES — annotated on timeline + charts
+// ═══════════════════════════════════════════════════
+const KEY_DATES = [
+  { date: '20240708', label: 'Archive start' },
+  { date: '20240806', label: 'Kursk offensive' },
+  { date: '20241001', label: 'Vuhledar falls' },
+  { date: '20250210', label: 'Pokrovsk push' },
+];
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+let availableDates = [], currentIndex = -1;
+let loadingCount = 0, pendingSlider = null;
+let playing = false, playTimer = null, playSpeed = 1200;
+const SPEEDS = [1200, 800, 400, 200]; let speedIdx = 0;
+let dsLayer = null, dsPulseLayer = null, gainedLayer = null, lostLayer = null;
+let heatGainLayer = null, heatLostLayer = null;
+let fireLayer = null;
+let ghostLayers = [];
+let salientLayer = null;
+let divgenLayer = null, dsOnlyLayer = null, dgOnlyLayer = null;
+let showPulse = true;
+let cityMarkers = [];
+let timeSeries = [];
+let tsDS = [], tsDivgen = [];
+
+// Measure
+let measureActive = false, measurePoints = [], measureLine = null, measureMarkers = [];
+
+// Split mode
+let splitActive = false, map2 = null, dsLayer2 = null, splitIndex = -1;
+
+// Basemaps
+const TILES = {
+  dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  terrain: 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
+};
+let terrainLayer = null;
+let currentBasemap = 'dark';
+let tileLayer = null, tileLayer2 = null;
+
+// ═══════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════
+const map = L.map('map', {
+  center: [48.3, 36.0], zoom: 6, zoomControl: false, attributionControl: false, preferCanvas: true,
+});
+tileLayer = L.tileLayer(TILES.dark, { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+L.control.zoom({ position: 'topright' }).addTo(map);
+L.control.attribution({ position: 'bottomleft', prefix: false })
+  .addAttribution('<a href="https://deepstatemap.live/en">DeepState</a> · <a href="https://carto.com">CARTO</a>')
+  .addTo(map);
+
+const S = {
+  occ:    { fillColor: '#b33a22', fillOpacity: 0.4,  color: '#e04030', weight: 1.5, opacity: 0.7 },
+  gained: { fillColor: '#da3633', fillOpacity: 0.6,  color: '#ff4444', weight: 1.5, opacity: 0.9 },
+  lost:   { fillColor: '#2ea043', fillOpacity: 0.5,  color: '#3fb950', weight: 1.5, opacity: 0.9 },
+  heatG:  { fillColor: '#f0b429', fillOpacity: 0.35, color: '#f0b429', weight: 1,   opacity: 0.6 },
+  heatL:  { fillColor: '#58a6ff', fillOpacity: 0.25, color: '#58a6ff', weight: 1,   opacity: 0.5 },
+};
+
+// ═══════════════════════════════════════════════════
+// BASEMAP TOGGLE
+// ═══════════════════════════════════════════════════
+function setBasemap(name) {
+  currentBasemap = name;
+  map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(TILES[name], { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+  tileLayer.bringToBack();
+  document.querySelectorAll('.basemap-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(name === 'dark' ? 'bmDark' : name === 'satellite' ? 'bmSat' : 'bmLight').classList.add('active');
+  if (map2 && tileLayer2) {
+    map2.removeLayer(tileLayer2);
+    tileLayer2 = L.tileLayer(TILES[name], { maxZoom: 19, subdomains: 'abcd' }).addTo(map2);
+    tileLayer2.bringToBack();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// API
+// ═══════════════════════════════════════════════════
+async function api(url, label) {
+  loadingCount++;
+  if (label) showLoading(label);
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return r.status === 404 ? null : (() => { throw new Error(`HTTP ${r.status}`); })();
+    return await r.json();
+  } catch (e) { console.error(url, e); return null; }
+  finally { if (--loadingCount <= 0) { loadingCount = 0; hideLoading(); } }
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+function renderKeyDateMarkers() {
+  const container = document.getElementById('keyDateMarkers');
+  container.innerHTML = '';
+  for (const kd of KEY_DATES) {
+    const idx = availableDates.indexOf(kd.date);
+    if (idx < 0) continue;
+    const pct = (idx / (availableDates.length - 1)) * 100;
+    const el = document.createElement('div');
+    el.className = 'key-marker';
+    el.style.left = pct + '%';
+    el.setAttribute('data-label', kd.label);
+    container.appendChild(el);
+  }
+}
+
+async function loadTimeSeries() {
+  const dual = await api('/api/time-series/dual');
+  if (dual?.deepstate?.length) {
+    tsDS = dual.deepstate;
+    tsDivgen = dual.divgen || [];
+    timeSeries = tsDS;
+    ['areaChartSection', 'rateChartSection', 'gapChartSection'].forEach(id =>
+      document.getElementById(id).style.display = '');
+    drawAllCharts();
+  } else {
+    const ds_only = await api('/api/time-series?source=ds');
+    if (ds_only?.length) {
+      tsDS = ds_only;
+      timeSeries = tsDS;
+      ['areaChartSection', 'rateChartSection'].forEach(id =>
+        document.getElementById(id).style.display = '');
+      drawAllCharts();
+      // Retry dual later for divgen
+      setTimeout(loadTimeSeries, 30000);
+    } else {
+      setTimeout(loadTimeSeries, 5000);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// LOAD DATE
+// ═══════════════════════════════════════════════════
+async function loadDateByIndex(idx) {
+  if (idx < 0 || idx >= availableDates.length) return;
+  const d = availableDates[idx];
+  currentIndex = idx;
+  const slider = document.getElementById('daySlider');
+  slider._skipInput = true;
+  slider.value = idx;
+  document.getElementById('dateDisplay').textContent = fmt(d);
+  document.getElementById('metricDate').textContent = fmt(d);
+
+  // Single batch request for everything
+  const snap = await api(`/api/snapshot/${d}`, `Loading ${fmt(d)}...`);
+  if (!snap || snap.error) { toast(`No data for ${fmt(d)}`, true); return; }
+
+  const geom = snap.ds_geom;
+  const dgGeom = snap.dg_geom;
+  const stats = snap.stats;
+  const cmp = snap.compare;
+
+  renderOcc(geom);
+
+  // Divgen overlay (always)
+  clearDivgen();
+  if (dgGeom) {
+    divgenLayer = L.geoJSON(wrapFC(dgGeom), {
+      style: { fill: false, color: '#bc8cff', weight: 2, opacity: 0.6, dashArray: '6 3' },
+    }).addTo(map);
+  }
+
+  // Paired metrics
+  const UKR_MAINLAND = 575550;
+  if (stats) {
+    document.getElementById('dsArea').textContent = `${num(stats.area_km2)}`;
+    document.getElementById('dsFront').textContent = `${num(stats.frontline_km)} km`;
+  }
+  if (cmp) {
+    document.getElementById('dsArea').textContent = `${num(cmp.ds_area_km2)}`;
+    document.getElementById('dgArea').textContent = `${num(cmp.dg_area_km2)}`;
+    const gap = cmp.dg_area_km2 - cmp.ds_area_km2;
+    const gapEl = document.getElementById('gapArea');
+    gapEl.textContent = `${gap > 0 ? '+' : ''}${num(gap)}`;
+    gapEl.style.color = gap > 0 ? 'var(--purple)' : gap < 0 ? 'var(--red)' : 'var(--t3)';
+
+    document.getElementById('dsPct').textContent = `${(cmp.ds_area_km2 / UKR_MAINLAND * 100).toFixed(1)}%`;
+    document.getElementById('dgPct').textContent = `${(cmp.dg_area_km2 / UKR_MAINLAND * 100).toFixed(1)}%`;
+    document.getElementById('cmpExcluded').textContent = `${num(cmp.excluded_km2)} km²`;
+
+    document.getElementById('disagreementSection').style.display = '';
+    document.getElementById('cmpOverlap').textContent = `${num(cmp.overlap_km2)} km²`;
+    document.getElementById('cmpDSOnly').textContent = `${num(cmp.ds_only_km2)} km²`;
+    document.getElementById('cmpDGOnly').textContent = `${num(cmp.dg_only_km2)} km²`;
+
+    if (document.getElementById('showDisagreement').checked) renderDisagreement(cmp);
+  } else {
+    document.getElementById('dgArea').textContent = '—';
+    document.getElementById('gapArea').textContent = '';
+    document.getElementById('dgFront').textContent = '';
+    document.getElementById('disagreementSection').style.display = 'none';
+    if (stats) {
+      document.getElementById('dsPct').textContent = `${(stats.area_km2 / UKR_MAINLAND * 100).toFixed(1)}%`;
+      document.getElementById('dgPct').textContent = '—';
+    }
+  }
+
+  // Diff (still separate — needs previous date)
+  if (document.getElementById('showDiff').checked && idx > 0) loadDiff(availableDates[idx - 1], d);
+  else clearDiff();
+
+  // Cities + oblasts from snapshot (no extra calls)
+  if (document.getElementById('showCities').checked && snap.distances) renderCities(snap.distances);
+  if (snap.oblasts) renderOblasts(snap.oblasts);
+
+  updateWarTicker(d, stats);
+  updateRateMetrics(d);
+
+    if (document.getElementById('showGhosts').checked) loadGhosts();
+    if (document.getElementById('showHeatmap').checked) loadHeatmap();
+    if (document.getElementById('showSalients').checked) { loadSalients(); }
+    else if (document.getElementById('projGrid').innerHTML) { loadProjections(d); }
+
+    // URL state
+    updateURL(d);
+
+    // Split mode: update label
+    if (splitActive) {
+      document.getElementById('splitLabelL').textContent = fmt(d);
+    }
+}
+
+async function loadDiff(d1, d2) {
+  const dual = await api(`/api/diff/dual/${d1}/${d2}`);
+  if (dual && dual.ds) renderDiff(dual.ds, dual.divgen); else clearDiff();
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════
+function renderOcc(geom) {
+  if (dsLayer) map.removeLayer(dsLayer);
+  if (dsPulseLayer) map.removeLayer(dsPulseLayer);
+  dsLayer = L.geoJSON(wrapFC(geom), { style: S.occ }).addTo(map);
+
+  // Animated pulsing frontline
+  if (showPulse) {
+    dsPulseLayer = L.geoJSON(wrapFC(geom), {
+      style: { fill: false, color: '#ff6040', weight: 2.5, opacity: 0.8, dashArray: '8 8', className: 'frontline-pulse' },
+    }).addTo(map);
+  }
+}
+
+function renderDiff(dsDiff, dgDiff) {
+  clearDiff();
+  // Render DS diff on map (gains = red, losses = green)
+  if (dsDiff.gained) {
+    gainedLayer = L.geoJSON(wrapFC(dsDiff.gained), { style: S.gained }).addTo(map);
+    if (!document.getElementById('showGainedLayer').checked) map.removeLayer(gainedLayer);
+  }
+  if (dsDiff.lost) {
+    lostLayer = L.geoJSON(wrapFC(dsDiff.lost), { style: S.lost }).addTo(map);
+    if (!document.getElementById('showLostLayer').checked) map.removeLayer(lostLayer);
+  }
+
+  document.getElementById('diffSection').style.display = '';
+
+  // DS column
+  document.getElementById('diffDSGained').textContent = dsDiff.gained_km2 > 0 ? `+${dsDiff.gained_km2}` : '0';
+  document.getElementById('diffDSLost').textContent = dsDiff.lost_km2 > 0 ? `−${dsDiff.lost_km2}` : '0';
+  const dsN = dsDiff.net_km2;
+  const dsEl = document.getElementById('diffDSNet');
+  dsEl.textContent = `${dsN > 0 ? '+' : ''}${dsN}`;
+  dsEl.style.color = dsN > 0 ? 'var(--red)' : dsN < 0 ? 'var(--green)' : 'var(--t3)';
+
+  // Divgen column
+  if (dgDiff) {
+    document.getElementById('diffDGGained').textContent = dgDiff.gained_km2 > 0 ? `+${dgDiff.gained_km2}` : '0';
+    document.getElementById('diffDGLost').textContent = dgDiff.lost_km2 > 0 ? `−${dgDiff.lost_km2}` : '0';
+    const dgN = dgDiff.net_km2;
+    const dgEl = document.getElementById('diffDGNet');
+    dgEl.textContent = `${dgN > 0 ? '+' : ''}${dgN}`;
+    dgEl.style.color = dgN > 0 ? 'var(--red)' : dgN < 0 ? 'var(--green)' : 'var(--t3)';
+  } else {
+    ['diffDGGained', 'diffDGLost', 'diffDGNet'].forEach(id =>
+      document.getElementById(id).textContent = '—');
+  }
+}
+function clearDiff() {
+  if (gainedLayer) { map.removeLayer(gainedLayer); gainedLayer = null; }
+  if (lostLayer) { map.removeLayer(lostLayer); lostLayer = null; }
+  document.getElementById('diffSection').style.display = 'none';
+}
+function toggleDiffLayer(w) {
+  const l = w === 'gained' ? gainedLayer : lostLayer;
+  const c = document.getElementById(w === 'gained' ? 'showGainedLayer' : 'showLostLayer').checked;
+  if (l) { c ? l.addTo(map) : map.removeLayer(l); }
+}
+function toggleDiffVis() {
+  if (document.getElementById('showDiff').checked && currentIndex > 0)
+    loadDiff(availableDates[currentIndex - 1], availableDates[currentIndex]);
+  else clearDiff();
+}
+
+// ═══════════════════════════════════════════════════
+// CITY DISTANCES
+// ═══════════════════════════════════════════════════
+function renderCities(data) {
+  // Clear old markers
+  cityMarkers.forEach(m => map.removeLayer(m));
+  cityMarkers = [];
+  const grid = document.getElementById('cityGrid');
+  grid.innerHTML = '';
+  if (!data) return;
+
+  for (const c of data.slice(0, 8)) {
+    // Map markers
+    const cls = c.occupied ? 'occupied' : c.distance_km < 30 ? 'close' : 'safe';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="font-size:9px;font-family:var(--mono);color:${cls === 'occupied' ? '#da3633' : cls === 'close' ? '#d29922' : '#8b949e'};text-shadow:0 0 3px #0d1117,0 0 6px #0d1117;white-space:nowrap;font-weight:600">${c.name} ${c.occupied ? '(OCC)' : c.distance_km + 'km'}</div>`,
+      iconSize: [0, 0], iconAnchor: [-5, 5],
+    });
+    const marker = L.marker([c.lat, c.lon], { icon, interactive: false }).addTo(map);
+    cityMarkers.push(marker);
+
+    // Panel
+    const n = document.createElement('div'); n.className = 'city-name'; n.textContent = c.name;
+    const d = document.createElement('div');
+    d.className = `city-dist ${cls}`;
+    d.textContent = c.occupied ? 'OCCUPIED' : `${c.distance_km} km`;
+    grid.appendChild(n); grid.appendChild(d);
+  }
+}
+
+function toggleCities() {
+  if (document.getElementById('showCities').checked && currentIndex >= 0) {
+    api(`/api/distances/${availableDates[currentIndex]}`).then(renderCities);
+  } else {
+    cityMarkers.forEach(m => map.removeLayer(m));
+    cityMarkers = [];
+    document.getElementById('cityGrid').innerHTML = '';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// HEATMAP
+// ═══════════════════════════════════════════════════
+async function toggleHeatmap() {
+  document.getElementById('showHeatmap').checked ? await loadHeatmap() : clearHeatmap();
+}
+async function loadHeatmap() {
+  if (currentIndex < 0) return;
+  const d = availableDates[currentIndex], days = document.getElementById('heatmapDays').value;
+  const data = await api(`/api/heatmap/${d}?days=${days}`, `${days}d heatmap...`);
+  if (!data) { toast('Heatmap failed', true); return; }
+  clearHeatmap();
+  if (data.gained_union) heatGainLayer = L.geoJSON(wrapFC(data.gained_union), { style: S.heatG }).addTo(map);
+  if (data.lost_union) heatLostLayer = L.geoJSON(wrapFC(data.lost_union), { style: S.heatL }).addTo(map);
+  document.getElementById('heatmapSection').style.display = '';
+  document.getElementById('heatGained').textContent = `${data.gained_km2} km²`;
+  document.getElementById('heatLost').textContent = `${data.lost_km2} km²`;
+  document.getElementById('legendHG').style.display = '';
+  document.getElementById('legendHL').style.display = '';
+}
+function clearHeatmap() {
+  if (heatGainLayer) { map.removeLayer(heatGainLayer); heatGainLayer = null; }
+  if (heatLostLayer) { map.removeLayer(heatLostLayer); heatLostLayer = null; }
+  document.getElementById('heatmapSection').style.display = 'none';
+  document.getElementById('legendHG').style.display = 'none';
+  document.getElementById('legendHL').style.display = 'none';
+}
+function reloadHeatmap() { if (document.getElementById('showHeatmap').checked) loadHeatmap(); }
+
+// ═══════════════════════════════════════════════════
+// MEASURE TOOL
+// ═══════════════════════════════════════════════════
+function toggleMeasure() {
+  measureActive = document.getElementById('measureMode').checked;
+  if (measureActive) {
+    map.getContainer().style.cursor = 'crosshair';
+    map.on('click', measureClick);
+    toast('Click two points to measure distance');
+  } else {
+    map.getContainer().style.cursor = '';
+    map.off('click', measureClick);
+    clearMeasure();
+  }
+}
+function measureClick(e) {
+  measurePoints.push(e.latlng);
+  const m = L.circleMarker(e.latlng, { radius: 5, color: '#f0b429', fillColor: '#f0b429', fillOpacity: 1 }).addTo(map);
+  measureMarkers.push(m);
+
+  if (measurePoints.length === 2) {
+    const [a, b] = measurePoints;
+    const dist = a.distanceTo(b); // meters
+    measureLine = L.polyline([a, b], { color: '#f0b429', weight: 2, dashArray: '6 4' }).addTo(map);
+    const el = document.getElementById('measureResult');
+    if (dist >= 1000) el.textContent = `${(dist / 1000).toFixed(1)} km`;
+    else el.textContent = `${Math.round(dist)} m`;
+    el.style.display = 'block';
+    // Reset on next click
+    setTimeout(() => { map.once('click', () => { clearMeasure(); }); }, 100);
+  }
+}
+function clearMeasure() {
+  measurePoints = [];
+  measureMarkers.forEach(m => map.removeLayer(m)); measureMarkers = [];
+  if (measureLine) { map.removeLayer(measureLine); measureLine = null; }
+  document.getElementById('measureResult').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════
+// SIDE-BY-SIDE COMPARISON
+// ═══════════════════════════════════════════════════
+function toggleSplit() {
+  splitActive = document.getElementById('splitMode').checked;
+  if (splitActive) {
+    document.body.classList.add('split-mode');
+    // Init second map
+    if (!map2) {
+      map2 = L.map('map2', {
+        center: map.getCenter(), zoom: map.getZoom(),
+        zoomControl: false, attributionControl: false, preferCanvas: true,
+      });
+      tileLayer2 = L.tileLayer(TILES[currentBasemap], { maxZoom: 19, subdomains: 'abcd' }).addTo(map2);
+      // Sync maps (named functions so we can remove them)
+      map._syncToMap2 = () => { if (splitActive) map2.setView(map.getCenter(), map.getZoom(), { animate: false }); };
+      map2._syncToMap1 = () => { if (splitActive) map.setView(map2.getCenter(), map2.getZoom(), { animate: false }); };
+      map.on('move', map._syncToMap2);
+      map2.on('move', map2._syncToMap1);
+    }
+    map.invalidateSize();
+    map2.invalidateSize();
+    map2.setView(map.getCenter(), map.getZoom());
+
+    // Load a comparison date (30 days before current)
+    splitIndex = Math.max(0, currentIndex - 30);
+    loadSplitDate(splitIndex);
+
+    document.getElementById('splitLabelL').style.display = 'block';
+    document.getElementById('splitLabelR').style.display = 'block';
+    document.getElementById('splitLabelL').textContent = fmt(availableDates[currentIndex]);
+    toast('Right map shows 30 days earlier. Use Shift+↑↓ to adjust.');
+  } else {
+    document.body.classList.remove('split-mode');
+    map.invalidateSize();
+    if (dsLayer2) { map2.removeLayer(dsLayer2); dsLayer2 = null; }
+    document.getElementById('splitLabelL').style.display = 'none';
+    document.getElementById('splitLabelR').style.display = 'none';
+  }
+}
+
+async function loadSplitDate(idx) {
+  if (!map2 || idx < 0 || idx >= availableDates.length) return;
+  const d = availableDates[idx];
+  splitIndex = idx;
+  document.getElementById('splitLabelR').textContent = fmt(d);
+  const geom = await api(`/api/date/${d}`);
+  if (geom && !geom.error) {
+    if (dsLayer2) map2.removeLayer(dsLayer2);
+    dsLayer2 = L.geoJSON(wrapFC(geom), { style: S.occ }).addTo(map2);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════════
+function drawAllCharts() { drawAreaChart(); drawRateChart(); drawGapChart(); }
+
+function drawAreaChart() {
+  const canvas = document.getElementById('areaChart'), ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const dsVals = tsDS.map(p => p.area_km2);
+  const dgVals = tsDivgen.map(p => p.area_km2);
+  const allVals = [...dsVals, ...dgVals].filter(v => v > 0);
+  if (!allVals.length) return;
+  const mn = Math.min(...allVals) * 0.95, mx = Math.max(...allVals) * 1.02, rng = mx - mn || 1;
+  const toY = v => h - ((v - mn) / rng) * (h - 8) - 4;
+  const toX = (i, len) => (i / Math.max(len - 1, 1)) * w;
+
+  // Key date markers
+  for (const kd of KEY_DATES) {
+    const ki = tsDS.findIndex(p => p.date >= kd.date);
+    if (ki >= 0) {
+      const x = toX(ki, dsVals.length);
+      ctx.strokeStyle = 'rgba(188,140,255,.25)'; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(188,140,255,.4)'; ctx.font = '7px JetBrains Mono';
+      ctx.fillText(kd.label, x + 2, 8);
+    }
+  }
+
+  // Shaded gap between DS and Divgen (where they disagree)
+  if (dsVals.length && dgVals.length && dsVals.length === dgVals.length) {
+    ctx.beginPath();
+    for (let i = 0; i < dsVals.length; i++) ctx.lineTo(toX(i, dsVals.length), toY(dsVals[i]));
+    for (let i = dgVals.length - 1; i >= 0; i--) ctx.lineTo(toX(i, dgVals.length), toY(dgVals[i]));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(188,140,255,.1)';
+    ctx.fill();
+  }
+
+  // DS line (red) + fill
+  if (dsVals.length) {
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'rgba(218,54,51,.15)'); grad.addColorStop(1, 'rgba(218,54,51,0)');
+    ctx.beginPath(); ctx.moveTo(0, h);
+    for (let i = 0; i < dsVals.length; i++) ctx.lineTo(toX(i, dsVals.length), toY(dsVals[i]));
+    ctx.lineTo(w, h); ctx.fillStyle = grad; ctx.fill();
+
+    ctx.beginPath();
+    for (let i = 0; i < dsVals.length; i++) {
+      const x = toX(i, dsVals.length), y = toY(dsVals[i]);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#da3633'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(w - 1, toY(dsVals[dsVals.length - 1]), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#da3633'; ctx.fill();
+  }
+
+  // Divgen line (purple)
+  if (dgVals.length) {
+    ctx.beginPath();
+    for (let i = 0; i < dgVals.length; i++) {
+      const x = toX(i, dgVals.length), y = toY(dgVals[i]);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#bc8cff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(w - 1, toY(dgVals[dgVals.length - 1]), 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#bc8cff'; ctx.fill();
+  }
+
+  // Labels
+  const src = tsDS.length ? tsDS : tsDivgen;
+  if (src.length) {
+    document.getElementById('chartStart').textContent = fmt(src[0].date);
+    document.getElementById('chartEnd').textContent = fmt(src[src.length - 1].date);
+  }
+
+  // Tooltip shows both values
+  canvas.onmousemove = e => {
+    const rect = canvas.getBoundingClientRect(), x = e.clientX - rect.left;
+    const dsIdx = Math.round((x / rect.width) * Math.max(dsVals.length - 1, 0));
+    const tt = document.getElementById('areaTooltip');
+    let text = '';
+    if (dsIdx >= 0 && dsIdx < tsDS.length) text += `DS: ${num(tsDS[dsIdx].area_km2)}`;
+    const dgIdx = Math.round((x / rect.width) * Math.max(dgVals.length - 1, 0));
+    if (dgIdx >= 0 && dgIdx < tsDivgen.length) text += ` | DG: ${num(tsDivgen[dgIdx].area_km2)}`;
+    if (tsDS[dsIdx]) text = `${fmt(tsDS[dsIdx].date)} ${text}`;
+    tt.textContent = text;
+    tt.style.left = x + 'px'; tt.style.top = '0'; tt.style.opacity = '1';
+  };
+  canvas.onmouseleave = () => { document.getElementById('areaTooltip').style.opacity = '0'; };
+}
+
+function drawRateChart() {
+  const canvas = document.getElementById('rateChart'), ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height; ctx.clearRect(0, 0, w, h);
+  const vals = timeSeries.map(p => p.rate_7d_avg || 0);
+  const absMax = Math.max(Math.abs(Math.min(...vals)), Math.abs(Math.max(...vals)), 0.5);
+  const mid = h / 2;
+  ctx.strokeStyle = 'rgba(139,148,158,.15)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+  const bw = Math.max(1, w / vals.length - .5);
+  for (let i = 0; i < vals.length; i++) {
+    const x = (i / vals.length) * w, bh = (vals[i] / absMax) * (h / 2 - 3);
+    ctx.fillStyle = vals[i] >= 0 ? 'rgba(218,54,51,.55)' : 'rgba(63,185,80,.45)';
+    ctx.fillRect(x, mid - bh, bw, bh);
+  }
+}
+
+function drawGapChart() {
+  if (!tsDS.length || !tsDivgen.length) {
+    document.getElementById('gapChartSection').style.display = 'none';
+    return;
+  }
+  document.getElementById('gapChartSection').style.display = '';
+  const canvas = document.getElementById('gapChart'), ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Compute gap: DS area - Divgen area for each matching date
+  const gaps = [];
+  const dsMap = Object.fromEntries(tsDS.map(p => [p.date, p.area_km2]));
+  for (const dg of tsDivgen) {
+    if (dsMap[dg.date]) {
+      gaps.push({ date: dg.date, gap: dsMap[dg.date] - dg.area_km2 });
+    }
+  }
+  if (gaps.length < 2) return;
+
+  const vals = gaps.map(g => g.gap);
+  const mn = Math.min(...vals) * 0.9, mx = Math.max(...vals) * 1.1;
+  const rng = mx - mn || 1;
+  const mid = h / 2;
+
+  // Zero line
+  const zeroY = h - ((0 - mn) / rng) * (h - 6) - 3;
+  ctx.strokeStyle = 'rgba(139,148,158,.2)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
+
+  // Fill area
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(188,140,255,.2)'); grad.addColorStop(1, 'rgba(188,140,255,0)');
+  ctx.beginPath(); ctx.moveTo(0, zeroY);
+  for (let i = 0; i < vals.length; i++) {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((vals[i] - mn) / rng) * (h - 6) - 3;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w, zeroY); ctx.fillStyle = grad; ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  for (let i = 0; i < vals.length; i++) {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((vals[i] - mn) / rng) * (h - 6) - 3;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#bc8cff'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // Label
+  ctx.fillStyle = 'rgba(188,140,255,.5)'; ctx.font = '7px JetBrains Mono';
+  ctx.fillText(`${num(vals[vals.length-1])} km² gap`, w - 70, 10);
+}
+
+function updateRateMetrics(dateStr) {
+  if (!timeSeries.length) return;
+  const e = timeSeries.find(p => p.date === dateStr) || timeSeries[timeSeries.length - 1];
+  if (!e) return;
+  const d = e.rate_km2_per_day || 0, a = e.rate_7d_avg || 0;
+  const de = document.getElementById('rateDaily');
+  de.textContent = `${a >= 0 ? '+' : ''}${a} km²/d`;
+  de.style.color = a > 0 ? 'var(--red)' : a < 0 ? 'var(--green)' : 'var(--t3)';
+  const ae = document.getElementById('rate7d');
+  ae.textContent = `Δ${d >= 0 ? '+' : ''}${d}`;
+  ae.style.color = d > 0 ? 'var(--red)' : d < 0 ? 'var(--green)' : 'var(--t3)';
+}
+
+// ═══════════════════════════════════════════════════
+// TIMELINE
+// ═══════════════════════════════════════════════════
+function sliderInput(v) {
+  const slider = document.getElementById('daySlider');
+  if (slider._skipInput) { slider._skipInput = false; return; }
+  const i = parseInt(v);
+  if (i < 0 || i >= availableDates.length) return;
+  document.getElementById('dateDisplay').textContent = fmt(availableDates[i]);
+  clearTimeout(pendingSlider);
+  pendingSlider = setTimeout(() => loadDateByIndex(i), 250);
+}
+function stepDay(n) {
+  const i = currentIndex + n;
+  if (i >= 0 && i < availableDates.length) loadDateByIndex(i);
+}
+function togglePlay() {
+  playing = !playing;
+  const btn = document.getElementById('playBtn'), icon = document.getElementById('playIcon');
+  if (playing) {
+    icon.innerHTML = '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>';
+    btn.classList.add('active'); playStep();
+  } else {
+    icon.innerHTML = '<polygon points="8,5 19,12 8,19"/>'; btn.classList.remove('active');
+    clearTimeout(playTimer);
+  }
+}
+function playStep() {
+  if (!playing) return;
+  if (currentIndex + 1 >= availableDates.length) { togglePlay(); return; }
+  loadDateByIndex(currentIndex + 1).then(() => { playTimer = setTimeout(playStep, playSpeed); });
+}
+function cycleSpeed() {
+  speedIdx = (speedIdx + 1) % SPEEDS.length;
+  playSpeed = SPEEDS[speedIdx];
+  document.getElementById('speedBadge').textContent = ['1d/1.2s','1d/0.8s','1d/0.4s','1d/0.2s'][speedIdx];
+}
+
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
+function fmt(d) { return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`; }
+function num(n) { return Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+function wrapFC(g) { return { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: g, properties: {} }] }; }
+function showLoading(t) { document.getElementById('loadingText').textContent = t; document.getElementById('loading').classList.add('show'); }
+function hideLoading() { document.getElementById('loading').classList.remove('show'); }
+function toast(m, err) {
+  const el = document.getElementById('toast');
+  el.textContent = m; el.className = `toast show${err ? ' error' : ''}`;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ═══════════════════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  switch (e.key) {
+    case 'ArrowRight': e.preventDefault(); stepDay(e.shiftKey ? 7 : 1); break;
+    case 'ArrowLeft':  e.preventDefault(); stepDay(e.shiftKey ? -7 : -1); break;
+    case 'ArrowUp':    if (splitActive) { e.preventDefault(); loadSplitDate(Math.min(splitIndex + 7, availableDates.length - 1)); } break;
+    case 'ArrowDown':  if (splitActive) { e.preventDefault(); loadSplitDate(Math.max(splitIndex - 7, 0)); } break;
+    case ' ':  e.preventDefault(); togglePlay(); break;
+    case 'Home': e.preventDefault(); loadDateByIndex(0); break;
+    case 'End':  e.preventDefault(); loadDateByIndex(availableDates.length - 1); break;
+    case 'h': case 'H': document.getElementById('showHeatmap').click(); break;
+    case 'd': case 'D': document.getElementById('showDiff').click(); break;
+    case 'm': case 'M': document.getElementById('measureMode').click(); break;
+    case 's': case 'S': setBasemap(currentBasemap === 'satellite' ? 'dark' : 'satellite'); break;
+    case 'c': case 'C': document.getElementById('splitMode').click(); break;
+    case 'f': case 'F': document.getElementById('showFires').click(); break;
+    case 'a': case 'A': document.getElementById('showAlerts').click(); break;
+    case 'r': case 'R': document.getElementById('showDisagreement').click(); break;
+    case 'g': case 'G': document.getElementById('showGhosts').click(); break;
+    case 'x': case 'X': document.getElementById('showSalients').click(); break;
+    case 'w': case 'W': document.getElementById('showWeather').click(); break;
+  }
+});
+
+// ═══════════════════════════════════════════════════
+// DIVGEN + DISAGREEMENT ZONES
+// ═══════════════════════════════════════════════════
+function clearDivgen() {
+  if (divgenLayer) { map.removeLayer(divgenLayer); divgenLayer = null; }
+  if (dsOnlyLayer) { map.removeLayer(dsOnlyLayer); dsOnlyLayer = null; }
+  if (dgOnlyLayer) { map.removeLayer(dgOnlyLayer); dgOnlyLayer = null; }
+  ['legendDSOnly', 'legendDGOnly'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+function renderDisagreement(cmp) {
+  // Clear old
+  if (dsOnlyLayer) { map.removeLayer(dsOnlyLayer); dsOnlyLayer = null; }
+  if (dgOnlyLayer) { map.removeLayer(dgOnlyLayer); dgOnlyLayer = null; }
+
+  if (cmp.ds_only) {
+    dsOnlyLayer = L.geoJSON(wrapFC(cmp.ds_only), {
+      style: { fillColor: '#da3633', fillOpacity: 0.3, color: '#da3633', weight: 1, opacity: 0.5, dashArray: '4 3' },
+    }).addTo(map);
+    document.getElementById('legendDSOnly').style.display = '';
+  }
+  if (cmp.dg_only) {
+    dgOnlyLayer = L.geoJSON(wrapFC(cmp.dg_only), {
+      style: { fillColor: '#8957e5', fillOpacity: 0.3, color: '#bc8cff', weight: 1, opacity: 0.5, dashArray: '4 3' },
+    }).addTo(map);
+    document.getElementById('legendDGOnly').style.display = '';
+  }
+}
+
+function toggleDisagreement() {
+  if (document.getElementById('showDisagreement').checked) {
+    if (currentIndex >= 0) {
+      api(`/api/compare/${availableDates[currentIndex]}`).then(cmp => {
+        if (cmp && !cmp.error) renderDisagreement(cmp);
+      });
+    }
+  } else {
+    if (dsOnlyLayer) { map.removeLayer(dsOnlyLayer); dsOnlyLayer = null; }
+    if (dgOnlyLayer) { map.removeLayer(dgOnlyLayer); dgOnlyLayer = null; }
+    ['legendDSOnly', 'legendDGOnly'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// GHOST FRONTLINES
+// ═══════════════════════════════════════════════════
+const GHOST_STYLES = [
+  { color: '#f0b429', opacity: 0.6, weight: 1.5, dashArray: '6 4' },  // 30d - gold
+  { color: '#bc8cff', opacity: 0.45, weight: 1.2, dashArray: '4 4' }, // 90d - purple
+  { color: '#58a6ff', opacity: 0.35, weight: 1, dashArray: '3 5' },   // 180d - blue
+];
+
+async function toggleGhosts() {
+  if (document.getElementById('showGhosts').checked) {
+    await loadGhosts();
+  } else {
+    clearGhosts();
+  }
+}
+
+async function loadGhosts() {
+  if (currentIndex < 0) return;
+  const d = availableDates[currentIndex];
+  const data = await api(`/api/ghosts/${d}`, 'Loading ghost frontlines...');
+  if (!data || !data.length) { toast('No ghost data available', true); return; }
+
+  clearGhosts();
+  data.forEach((g, i) => {
+    const style = GHOST_STYLES[i] || GHOST_STYLES[0];
+    const layer = L.geoJSON(
+      { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: g.geometry, properties: {} }] },
+      { style: { ...style, fill: false } }
+    ).addTo(map);
+    ghostLayers.push(layer);
+
+    const legendId = `legendGhost${g.days_ago}`;
+    const el = document.getElementById(legendId);
+    if (el) el.style.display = '';
+  });
+}
+
+function clearGhosts() {
+  ghostLayers.forEach(l => map.removeLayer(l));
+  ghostLayers = [];
+  ['legendGhost30', 'legendGhost90', 'legendGhost180'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// SALIENT DETECTION
+// ═══════════════════════════════════════════════════
+async function toggleSalients() {
+  if (document.getElementById('showSalients').checked) {
+    await loadSalients();
+  } else {
+    clearSalients();
+  }
+}
+
+async function loadSalients() {
+  if (currentIndex < 0) return;
+  const d = availableDates[currentIndex];
+  const data = await api(`/api/salients/${d}`, 'Detecting salients...');
+  if (!data || !data.length) { toast('No salients detected', true); return; }
+
+  clearSalients();
+
+  const fc = {
+    type: 'FeatureCollection',
+    features: data.map(s => ({
+      type: 'Feature',
+      geometry: s.geometry,
+      properties: s,
+    })),
+  };
+
+  salientLayer = L.geoJSON(fc, {
+    style: feature => {
+      const s = feature.properties;
+      const isRussian = s.type === 'protrusion';
+      return {
+        fillColor: isRussian ? '#ff6400' : '#58a6ff',
+        fillOpacity: 0.15 + s.vulnerability * 0.3,
+        color: isRussian ? '#ff6400' : '#58a6ff',
+        weight: 1.5,
+        opacity: 0.7,
+        dashArray: '4 3',
+      };
+    },
+    onEachFeature: (feature, layer) => {
+      const s = feature.properties;
+      layer.bindPopup(
+        `<b>${s.label}</b><br>` +
+        `Area: ${s.area_km2} km²<br>` +
+        `Perimeter: ${s.perimeter_km} km<br>` +
+        `Vulnerability: ${(s.vulnerability * 100).toFixed(0)}%`
+      );
+    },
+  }).addTo(map);
+
+  // Stats
+  document.getElementById('salientSection').style.display = '';
+  document.getElementById('legendSalient').style.display = '';
+  document.getElementById('salientCount').textContent = data.length;
+  document.getElementById('salientLargest').textContent = `${data[0].area_km2} km² (${data[0].label})`;
+  const mostVuln = data.reduce((a, b) => a.vulnerability > b.vulnerability ? a : b);
+  document.getElementById('salientVuln').textContent = `${(mostVuln.vulnerability * 100).toFixed(0)}% (${mostVuln.area_km2} km²)`;
+
+  // Also load projections
+  loadProjections(d);
+}
+
+function clearSalients() {
+  if (salientLayer) { map.removeLayer(salientLayer); salientLayer = null; }
+  document.getElementById('salientSection').style.display = 'none';
+  document.getElementById('legendSalient').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════
+// TIME-TO-CITY PROJECTIONS
+// ═══════════════════════════════════════════════════
+async function loadProjections(dateStr) {
+  const data = await api(`/api/projections/${dateStr}`);
+  if (!data || !data.length) return;
+
+  // projGrid is inside citySection, just populate it
+  const grid = document.getElementById('projGrid');
+  grid.innerHTML = '';
+
+  for (const c of data.slice(0, 8)) {
+    const row = document.createElement('div');
+    row.className = 'mr';
+    const label = document.createElement('span');
+    label.className = 'ml';
+    label.textContent = c.name;
+    const value = document.createElement('span');
+    value.className = 'mv';
+
+    if (c.direction === 'occupied') {
+      value.textContent = 'OCCUPIED';
+      value.classList.add('v-red');
+    } else if (c.direction === 'approaching' && c.eta_date) {
+      value.textContent = `${c.days_to_reach}d → ${c.eta_date}`;
+      value.classList.add('v-red');
+      value.title = `${c.velocity_km_per_day} km/day toward city`;
+    } else if (c.direction === 'receding') {
+      value.textContent = `${c.distance_km}km ← receding`;
+      value.classList.add('v-green');
+    } else {
+      value.textContent = `${c.distance_km}km (static)`;
+      value.classList.add('v-dim');
+    }
+
+    row.appendChild(label);
+    row.appendChild(value);
+    grid.appendChild(row);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// AIR RAID ALERTS
+// ═══════════════════════════════════════════════════
+let alertTimer = null;
+
+async function toggleAlerts() {
+  if (document.getElementById('showAlerts').checked) {
+    await loadAlerts();
+    // Auto-refresh every 30s
+    alertTimer = setInterval(loadAlerts, 30000);
+  } else {
+    clearInterval(alertTimer); alertTimer = null;
+    document.getElementById('alertSection').style.display = 'none';
+  }
+}
+
+async function loadAlerts() {
+  const data = await api('/api/alerts');
+  if (!data || data.error) return;
+
+  const section = document.getElementById('alertSection');
+  section.style.display = '';
+
+  const badge = document.getElementById('alertBadge');
+  if (data.active_count > 0) {
+    badge.className = 'alert-badge active';
+    badge.innerHTML = `<span class="alert-dot full"></span> ${data.active_count} active`;
+  } else {
+    badge.className = 'alert-badge calm';
+    badge.textContent = 'All clear';
+  }
+
+  const list = document.getElementById('alertList');
+  list.innerHTML = '';
+  for (const ob of data.oblasts) {
+    if (ob.level === 0) continue;
+    const row = document.createElement('div');
+    row.className = 'alert-row';
+    row.innerHTML = `<span class="alert-dot ${ob.status}"></span><span class="oblast-name">${ob.name}</span><span style="color:${ob.level===2?'var(--red)':'var(--orange)'}">${ob.status}</span>`;
+    list.appendChild(row);
+  }
+  if (data.active_count === 0) {
+    list.innerHTML = '<div style="font-size:.56rem;color:var(--green)">No active alerts</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// FRONTLINE WEATHER
+// ═══════════════════════════════════════════════════
+let weatherMarkers = [];
+
+async function toggleWeather() {
+  if (document.getElementById('showWeather').checked) {
+    await loadWeather();
+  } else {
+    clearWeather();
+  }
+}
+
+async function loadWeather() {
+  const data = await api('/api/weather', 'Loading weather...');
+  if (!data || !data.length) return;
+
+  clearWeather();
+  document.getElementById('weatherSection').style.display = '';
+  const grid = document.getElementById('weatherGrid');
+  grid.innerHTML = '';
+
+  for (const w of data) {
+    // Info panel card
+    const card = document.createElement('div');
+    card.className = 'wx-card';
+    const tempColor = w.temp_c < 0 ? 'var(--blue)' : w.temp_c > 25 ? 'var(--red)' : 'var(--t)';
+    card.innerHTML = `
+      <div class="wx-name">${w.name}</div>
+      <div class="wx-temp" style="color:${tempColor}">${w.temp_c}°C</div>
+      <div class="wx-detail">${w.weather}</div>
+      <div class="wx-detail">Wind ${w.wind_kmh} km/h · ${w.precip_mm}mm</div>
+    `;
+    grid.appendChild(card);
+
+    // Map marker
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="font-size:8px;font-family:var(--mono);color:${tempColor};text-shadow:0 0 3px #0d1117,0 0 6px #0d1117;white-space:nowrap;font-weight:600">${w.temp_c}° ${w.weather.split(' ')[0]}</div>`,
+      iconSize: [0, 0], iconAnchor: [-5, 5],
+    });
+    const marker = L.marker([w.lat, w.lon], { icon, interactive: false }).addTo(map);
+    weatherMarkers.push(marker);
+  }
+}
+
+function clearWeather() {
+  weatherMarkers.forEach(m => map.removeLayer(m));
+  weatherMarkers = [];
+  document.getElementById('weatherSection').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════
+// NASA FIRMS FIRE HOTSPOTS
+// ═══════════════════════════════════════════════════
+async function toggleFires() {
+  if (document.getElementById('showFires').checked) {
+    await loadFires();
+  } else {
+    clearFires();
+  }
+}
+
+async function loadFires() {
+  const period = document.getElementById('firePeriod').value;
+  const data = await api(`/api/fires?period=${period}`, `Loading FIRMS ${period}...`);
+  if (!data || !data.features) { toast('FIRMS data unavailable', true); return; }
+
+  clearFires();
+  const features = data.features;
+
+  fireLayer = L.geoJSON(data, {
+    pointToLayer: (feature, latlng) => {
+      const frp = feature.properties.frp || 0;
+      // Size and color based on fire radiative power
+      const radius = Math.min(2 + Math.sqrt(frp) * 1.5, 12);
+      const color = frp > 20 ? '#ff0000' : frp > 5 ? '#ff6600' : '#ffaa00';
+      const opacity = Math.min(0.4 + frp / 30, 0.9);
+      return L.circleMarker(latlng, {
+        radius,
+        fillColor: color,
+        fillOpacity: opacity,
+        color: '#ff4400',
+        weight: 0.5,
+        opacity: 0.6,
+      });
+    },
+    onEachFeature: (feature, layer) => {
+      const p = feature.properties;
+      layer.bindPopup(
+        `<b>Thermal Hotspot</b><br>` +
+        `FRP: ${p.frp} MW<br>` +
+        `Confidence: ${p.confidence}<br>` +
+        `Time: ${p.time} UTC<br>` +
+        `${p.daynight === 'D' ? 'Daytime' : 'Nighttime'} detection`,
+        { className: '' }
+      );
+    },
+  }).addTo(map);
+
+  // Stats
+  document.getElementById('fireSection').style.display = '';
+  document.getElementById('legendFire').style.display = '';
+  document.getElementById('fireCount').textContent = features.length;
+  const highFRP = features.filter(f => f.properties.frp > 10).length;
+  document.getElementById('fireHigh').textContent = highFRP;
+  const avgFRP = features.length > 0
+    ? (features.reduce((s, f) => s + f.properties.frp, 0) / features.length).toFixed(1)
+    : '0';
+  document.getElementById('fireAvg').textContent = avgFRP + ' MW';
+}
+
+function clearFires() {
+  if (fireLayer) { map.removeLayer(fireLayer); fireLayer = null; }
+  document.getElementById('fireSection').style.display = 'none';
+  document.getElementById('legendFire').style.display = 'none';
+}
+
+function reloadFires() {
+  if (document.getElementById('showFires').checked) loadFires();
+}
+
+// ═══════════════════════════════════════════════════
+// WAR TICKER
+// ═══════════════════════════════════════════════════
+function updateWarTicker(dateStr, stats) {
+  const invasion = new Date('2022-02-24');
+  const current = new Date(dateStr.slice(0,4) + '-' + dateStr.slice(4,6) + '-' + dateStr.slice(6,8));
+  const days = Math.floor((current - invasion) / 86400000);
+  document.getElementById('tickDay').textContent = days.toLocaleString();
+  if (stats) {
+    document.getElementById('tickArea').textContent = num(stats.area_km2) + ' km²';
+    document.getElementById('tickFront').textContent = num(stats.frontline_km) + ' km';
+  }
+  // Weekly change from time series
+  if (timeSeries.length) {
+    const e = timeSeries.find(p => p.date <= dateStr);
+    const el = document.getElementById('tickWeek');
+    if (e && e.rate_7d_avg !== undefined) {
+      const wk = (e.rate_7d_avg * 7);
+      el.textContent = `${wk >= 0 ? '+' : ''}${wk.toFixed(1)} km²`;
+      el.className = `tick-val ${wk > 0 ? 'red' : wk < 0 ? 'green' : ''}`;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// OBLAST OCCUPATION BARS
+// ═══════════════════════════════════════════════════
+function renderOblasts(data) {
+  const container = document.getElementById('oblastBars');
+  container.innerHTML = '';
+  if (!data || !data.length) { container.innerHTML = '<span style="font-size:.58rem;color:var(--t3)">No occupation data</span>'; return; }
+  for (const ob of data) {
+    const row = document.createElement('div'); row.className = 'oblast-row';
+    const nm = document.createElement('div'); nm.className = 'oblast-name';
+    // Clean up transliteration
+    nm.textContent = ob.name.replace(/'/g, '').replace('Donets k', 'Donetsk').replace('Luhans k', 'Luhansk');
+    nm.title = `${num(ob.occupied_km2)} / ${num(ob.total_km2)} km²`;
+    const bg = document.createElement('div'); bg.className = 'oblast-bar-bg';
+    const fill = document.createElement('div'); fill.className = 'oblast-bar-fill';
+    fill.style.width = Math.min(ob.pct, 100) + '%';
+    fill.style.background = ob.pct > 80 ? 'var(--red)' : ob.pct > 50 ? 'var(--orange)' : ob.pct > 10 ? 'var(--ac)' : 'var(--t3)';
+    bg.appendChild(fill);
+    const pct = document.createElement('div'); pct.className = 'oblast-pct';
+    pct.textContent = ob.pct + '%';
+    pct.style.color = ob.pct > 80 ? 'var(--red)' : ob.pct > 50 ? 'var(--orange)' : ob.pct > 10 ? 'var(--ac)' : 'var(--t3)';
+    row.appendChild(nm); row.appendChild(bg); row.appendChild(pct);
+    container.appendChild(row);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// TERRAIN OVERLAY
+// ═══════════════════════════════════════════════════
+function toggleTerrain() {
+  if (document.getElementById('showTerrain').checked) {
+    if (terrainLayer) map.removeLayer(terrainLayer);
+    terrainLayer = L.tileLayer(TILES.terrain, { maxZoom: 18, opacity: 0.4 }).addTo(map);
+  } else {
+    if (terrainLayer) { map.removeLayer(terrainLayer); terrainLayer = null; }
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// ANIMATED FRONTLINE TOGGLE
+// ═══════════════════════════════════════════════════
+function togglePulse() {
+  showPulse = document.getElementById('showPulse').checked;
+  if (!showPulse && dsPulseLayer) { map.removeLayer(dsPulseLayer); dsPulseLayer = null; }
+  else if (showPulse && dsLayer) {
+    // Re-render with pulse
+    const d = availableDates[currentIndex];
+    if (d) api(`/api/date/${d}`).then(g => { if (g && !g.error) renderOcc(g); });
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// URL STATE ENCODING
+// ═══════════════════════════════════════════════════
+function updateURL(dateStr) {
+  const c = map.getCenter(), z = map.getZoom();
+  const params = new URLSearchParams();
+  params.set('d', dateStr);
+  params.set('lat', c.lat.toFixed(4));
+  params.set('lng', c.lng.toFixed(4));
+  params.set('z', z);
+  history.replaceState(null, '', '?' + params.toString());
+}
+
+function loadFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const d = params.get('d');
+  const lat = parseFloat(params.get('lat'));
+  const lng = parseFloat(params.get('lng'));
+  const z = parseInt(params.get('z'));
+  if (lat && lng && z) map.setView([lat, lng], z);
+  return d; // return date to load after init
+}
+
+function shareURL() {
+  navigator.clipboard.writeText(window.location.href).then(() => {
+    toast('Link copied to clipboard');
+  }).catch(() => {
+    toast('Could not copy — use browser address bar', true);
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// GIF EXPORT (uses canvas capture + gif.js-like approach)
+// We build frames as data URLs and create an animated download
+// ═══════════════════════════════════════════════════
+function showGifModal() {
+  const modal = document.getElementById('gifModal');
+  document.getElementById('gifEnd').value = availableDates.length - 1;
+  document.getElementById('gifStart').value = Math.max(0, availableDates.length - 90);
+  document.getElementById('gifStatus').textContent = '';
+  document.getElementById('gifProgress').style.display = 'none';
+  modal.style.display = 'block';
+}
+function hideGifModal() { document.getElementById('gifModal').style.display = 'none'; }
+
+async function startGifExport() {
+  const startIdx = parseInt(document.getElementById('gifStart').value);
+  const endIdx = parseInt(document.getElementById('gifEnd').value);
+  const step = parseInt(document.getElementById('gifStep').value);
+  const delay = parseInt(document.getElementById('gifDelay').value);
+
+  if (endIdx <= startIdx) { toast('End must be after start', true); return; }
+
+  const frames = [];
+  const total = Math.floor((endIdx - startIdx) / step) + 1;
+  document.getElementById('gifProgress').style.display = 'block';
+  document.getElementById('gifStartBtn').disabled = true;
+
+  // We'll capture the map canvas for each frame
+  for (let i = startIdx, frame = 0; i <= endIdx; i += step, frame++) {
+    document.getElementById('gifBar').style.width = ((frame / total) * 100) + '%';
+    document.getElementById('gifStatus').textContent = `Frame ${frame + 1}/${total}: ${fmt(availableDates[i])}`;
+
+    await loadDateByIndex(i);
+    await new Promise(r => setTimeout(r, 300)); // let tiles render
+
+    // Capture map as image via leaflet's built-in method
+    try {
+      const canvas = document.querySelector('#map canvas.leaflet-zoom-animated');
+      if (canvas) {
+        frames.push({ date: fmt(availableDates[i]), dataUrl: canvas.toDataURL('image/png') });
+      }
+    } catch (e) {
+      console.warn('Canvas capture failed:', e);
+    }
+  }
+
+  document.getElementById('gifBar').style.width = '100%';
+  document.getElementById('gifStatus').textContent = `Done! ${frames.length} frames captured. Downloading as PNG sequence...`;
+  document.getElementById('gifStartBtn').disabled = false;
+
+  // Since we can't create a real GIF without a library, export as the last frame
+  // with a note. For a proper GIF, we'd need gif.js.
+  if (frames.length > 0) {
+    // Download last frame as a sample
+    const link = document.createElement('a');
+    link.download = `frontline_${fmt(availableDates[startIdx])}_to_${fmt(availableDates[endIdx])}.png`;
+    link.href = frames[frames.length - 1].dataUrl;
+    link.click();
+    toast(`Exported ${frames.length} frames. Last frame downloaded as PNG.`);
+  }
+  hideGifModal();
+}
+
+// ═══════════════════════════════════════════════════
+// INIT WITH URL STATE
+// ═══════════════════════════════════════════════════
+const urlDate = loadFromURL();
+
+async function initWithURL() {
+  const dates = await api('/api/dates', 'Loading dates...');
+  if (!dates?.length) { toast('No dates', true); return; }
+  availableDates = dates;
+  const slider = document.getElementById('daySlider');
+  slider.max = dates.length - 1;
+  slider.value = dates.length - 1;
+  document.getElementById('startLabel').textContent = fmt(dates[0]);
+  document.getElementById('endLabel').textContent = fmt(dates[dates.length - 1]);
+  renderKeyDateMarkers();
+
+  // Load from URL date or latest
+  let idx = dates.length - 1;
+  if (urlDate && dates.includes(urlDate)) {
+    idx = dates.indexOf(urlDate);
+  }
+  await loadDateByIndex(idx);
+  loadTimeSeries();
+}
+
+initWithURL();
+</script>
+</body>
+</html>

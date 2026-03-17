@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+data/cache/
+data/time_series.json
+data/divgen_time_series.json
+data/available_dates.json
+data/divgen_events.json
+.env
+.claude/
