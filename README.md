@@ -1,6 +1,6 @@
 # Ukraine Frontline Tracker
 
-Dual-source frontline comparison tool overlaying **DeepState UA** (Ukrainian OSINT) and **divgen.ru** (Russian OSINT) occupied territory polygons on the same map, with satellite fire detection, air raid alerts, and analytical overlays.
+Dual-source frontline comparison tool overlaying **DeepState UA** (Ukrainian OSINT) and **divgen.ru** (Russian OSINT) occupied territory polygons on the same map, with satellite fire detection, air raid alerts, sector activity ranking, and auto-generated daily briefings.
 
 All territorial comparisons exclude Crimea by clipping DeepState to divgen's geographic footprint — giving an apples-to-apples mainland comparison.
 
@@ -67,6 +67,10 @@ Net          +34.48       +47.78
 - **Measurement tool** — click two points for distance in km
 - **Terrain/hillshade overlay** — elevation layer for natural defensive lines
 
+### Intelligence
+- **Hottest Sectors** — ranks 10 frontline sectors by composite activity score (fire density × 0.5 + area change × 0.3 + frontline length × 0.2). Shows fires, km² change, and frontline km per sector with HIGH/MEDIUM/LOW rating.
+- **Daily Briefing** — auto-generated text report covering territory snapshot, source comparison, daily change, nearest cities, fire activity, and air raid alerts. One-click copy to clipboard for reports/newsletters.
+
 ### Analytics
 - **Oblast occupation** — bar chart (Luhansk 98.8%, Donetsk 78.5%, Zaporizhzhia 75.3%, Kherson 72.1%)
 - **Dual-line area chart** — DS (red) vs Divgen (purple) with shaded disagreement gap
@@ -98,15 +102,18 @@ Net          +34.48       +47.78
 
 ```
 frontline-tracker/
-├── server.py              # Flask server + 14 API endpoints
+├── server.py              # Flask server + 20 API endpoints
 ├── data_pipeline.py       # Data sources + analytics
 │   ├── DeepStateSource    # cyterat GitHub archive (daily GeoJSON)
 │   ├── DivgenSource       # divgen.ru KML scraping (negative-space extraction)
 │   ├── FrontlineAnalytics # Area, length, diff, rates, oblasts, salients, projections
+│   ├── BriefingGenerator  # Auto-generated daily text briefings
+│   ├── HottestSectors     # Sector activity ranking (fires + movement)
 │   ├── NASAFirms          # VIIRS fire hotspots (global CSV filtered to Ukraine)
 │   ├── AirRaidAlerts      # sirens.in.ua live status
 │   └── FrontlineWeather   # Open-Meteo conditions
-├── requirements.txt       # flask, requests, shapely, pyproj, geopandas
+├── requirements.txt       # flask, requests, shapely, pyproj, gunicorn
+├── render.yaml            # Render.com deploy config
 ├── data/
 │   ├── cache/             # ~70KB per date (DS) + ~100KB per date (divgen KML→GeoJSON)
 │   ├── oblasts.geojson    # Ukraine admin boundaries (Natural Earth)
@@ -121,6 +128,7 @@ frontline-tracker/
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /api/snapshot/<d>` | **Batch** — all data for a date in one call |
 | `GET /api/dates` | Available DeepState dates (YYYYMMDD) |
 | `GET /api/date/<d>` | Full-fidelity occupied territory GeoJSON |
 | `GET /api/stats/<d>` | Area km², frontline km, polygon count |
@@ -133,6 +141,8 @@ frontline-tracker/
 | `GET /api/salients/<d>` | Detected salients with vulnerability scores |
 | `GET /api/ghosts/<d>` | Frontline boundaries 30/90/180d ago |
 | `GET /api/heatmap/<d>?days=30` | Change heatmap (union of diffs) |
+| `GET /api/sectors/<d>` | Hottest sectors ranked by activity |
+| `GET /api/briefing/<d>` | Auto-generated daily text briefing |
 | `GET /api/time-series/dual` | Both DS + Divgen weekly time series |
 | `GET /api/fires?period=24h` | NASA FIRMS GeoJSON |
 | `GET /api/alerts` | Air raid alert status |

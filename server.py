@@ -19,7 +19,8 @@ log = logging.getLogger(__name__)
 from flask import Flask, render_template, jsonify, request, Response
 from data_pipeline import (
     DeepStateSource, FrontlineAnalytics, NASAFirms,
-    DivgenSource, AirRaidAlerts, FrontlineWeather, DATA_DIR,
+    DivgenSource, AirRaidAlerts, FrontlineWeather,
+    BriefingGenerator, HottestSectors, DATA_DIR,
 )
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
@@ -398,6 +399,34 @@ def api_alerts():
 def api_weather():
     """Current weather at key frontline locations. Cached 30min."""
     return jsonify(weather.fetch_weather())
+
+
+# ── Briefing ─────────────────────────────────────────
+
+@app.route("/api/briefing/<date_str>")
+def api_briefing(date_str):
+    """Auto-generated daily text briefing."""
+    prev = request.args.get("prev", None)
+    if not prev:
+        from datetime import datetime as _dt, timedelta as _td
+        try:
+            d = _dt.strptime(date_str, "%Y%m%d")
+            prev = (d - _td(days=1)).strftime("%Y%m%d")
+        except Exception:
+            prev = None
+    briefing = BriefingGenerator.generate(
+        analytics, ds, divgen, firms, raids, date_str, prev)
+    return jsonify(briefing)
+
+
+# ── Hottest Sectors ──────────────────────────────────
+
+@app.route("/api/sectors/<date_str>")
+def api_sectors(date_str):
+    """Rank frontline sectors by activity (fires + movement)."""
+    lookback = request.args.get("lookback", 7, type=int)
+    lookback = min(max(lookback, 1), 30)
+    return jsonify(HottestSectors.rank(analytics, ds, firms, date_str, lookback))
 
 
 # ── Export ───────────────────────────────────────────────

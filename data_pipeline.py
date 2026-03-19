@@ -584,6 +584,238 @@ class FrontlineAnalytics:
         return salients
 
 
+class BriefingGenerator:
+    """Auto-generates a daily text briefing from all available data."""
+
+    @staticmethod
+    def generate(analytics, ds, divgen_src, firms, raids,
+                 date_str: str, prev_date: str = None) -> dict:
+        """
+        Generate a structured briefing for a date.
+        Returns {date, title, summary, sections[]}.
+        """
+        from datetime import datetime as _dt
+
+        # Parse date for display
+        try:
+            d = _dt.strptime(date_str, "%Y%m%d")
+            display_date = d.strftime("%d %B %Y")
+            invasion_start = _dt(2022, 2, 24)
+            war_day = (d - invasion_start).days
+        except Exception:
+            display_date = date_str
+            war_day = 0
+
+        sections = []
+        title = f"Frontline Briefing — {display_date} (Day {war_day})"
+
+        # 1. Territory snapshot
+        ds_geom = ds.fetch_date(date_str)
+        if not ds_geom:
+            return {"date": date_str, "title": title,
+                    "summary": "No data available.", "sections": []}
+
+        stats = analytics.compute_stats(ds_geom)
+        area = stats["area_km2"]
+        fl = stats["frontline_km"]
+        sections.append({
+            "heading": "Territory",
+            "text": (f"Russian-occupied territory (DeepState): {area:,.0f} km² "
+                     f"({area / 603550 * 100:.1f}% of Ukraine). "
+                     f"Frontline length: {fl:,.0f} km."),
+        })
+
+        # 2. Divgen comparison
+        dg_geom = divgen_src.fetch_date(date_str)
+        if dg_geom:
+            dg_area = analytics.total_area(dg_geom)
+            gap = area - dg_area
+            sections.append({
+                "heading": "Source Comparison",
+                "text": (f"Divgen.ru (Russian OSINT): {dg_area:,.0f} km² occupied. "
+                         f"Gap: DS reports {gap:+,.0f} km² more than Divgen."),
+            })
+
+        # 3. Daily change
+        if prev_date:
+            prev_geom = ds.fetch_date(prev_date)
+            if prev_geom:
+                diff = analytics.compute_diff(prev_geom, ds_geom)
+                gained = diff["gained_km2"]
+                lost = diff["lost_km2"]
+                net = diff["net_km2"]
+                direction = "Russia gained" if net > 0 else "Ukraine recaptured" if net < 0 else "No net change"
+                sections.append({
+                    "heading": "Daily Change",
+                    "text": (f"{direction} {abs(net):.1f} km² net. "
+                             f"Russian gains: {gained:.1f} km², "
+                             f"Ukrainian recaptures: {lost:.1f} km²."),
+                })
+
+        # 4. Distances to key cities
+        distances = analytics.distances_to_cities(ds_geom)
+        closest = [d for d in distances if not d["occupied"]][:3]
+        if closest:
+            city_strs = [f"{c['name']} ({c['distance_km']}km)" for c in closest]
+            sections.append({
+                "heading": "Nearest Cities",
+                "text": f"Closest unoccupied cities to frontline: {', '.join(city_strs)}.",
+            })
+
+        # 5. Fire activity
+        try:
+            fires = firms.fetch_fires("24h")
+            n_fires = len(fires)
+            high_frp = [f for f in fires if float(f.get("frp", 0)) > 10]
+            sections.append({
+                "heading": "Fire Activity",
+                "text": (f"{n_fires} thermal hotspots detected in last 24h "
+                         f"({len(high_frp)} high-intensity, FRP>10MW)."),
+            })
+        except Exception:
+            pass
+
+        # 6. Air raid alerts
+        try:
+            alerts = raids.fetch_alerts()
+            n_active = alerts.get("active_count", 0)
+            alert_names = [s["name_en"] for s in alerts.get("states", [])
+                           if s.get("status") in ("full", "partial", True)][:5]
+            if n_active > 0:
+                sections.append({
+                    "heading": "Air Raid Alerts",
+                    "text": (f"{n_active} oblast(s) under air raid alert: "
+                             f"{', '.join(alert_names[:5])}"
+                             f"{'...' if len(alert_names) > 5 else ''}."),
+                })
+            else:
+                sections.append({
+                    "heading": "Air Raid Alerts",
+                    "text": "No active air raid alerts.",
+                })
+        except Exception:
+            pass
+
+        # Build summary (first 2 sentences)
+        summary_parts = []
+        if sections:
+            summary_parts.append(sections[0]["text"].split(".")[0] + ".")
+        if len(sections) > 2:
+            summary_parts.append(sections[2]["text"].split(".")[0] + ".")
+        summary = " ".join(summary_parts) if summary_parts else "Briefing generated."
+
+        return {
+            "date": date_str,
+            "title": title,
+            "summary": summary,
+            "sections": sections,
+            "war_day": war_day,
+        }
+
+
+class HottestSectors:
+    """Ranks frontline sectors by activity (fire density + movement speed)."""
+
+    # Sectors defined as bounding boxes: (name, west, south, east, north)
+    SECTORS = [
+        ("Kharkiv",        35.5, 49.0, 37.5, 50.5),
+        ("Lyman",          36.5, 48.7, 38.0, 49.2),
+        ("Bakhmut",        37.5, 48.3, 38.5, 48.8),
+        ("Chasiv Yar",     37.5, 48.5, 38.2, 48.7),
+        ("Pokrovsk",       36.5, 47.8, 37.8, 48.4),
+        ("Kurakhove",      36.5, 47.4, 37.5, 48.0),
+        ("Donetsk City",   37.2, 47.8, 38.2, 48.2),
+        ("Zaporizhzhia",   34.5, 46.8, 36.5, 47.8),
+        ("Kherson",        32.0, 46.2, 34.0, 47.2),
+        ("Sumy/Kursk",     33.5, 50.5, 36.0, 52.0),
+    ]
+
+    @staticmethod
+    def rank(analytics, ds, firms, date_str: str, lookback: int = 7) -> list[dict]:
+        """
+        Rank sectors by composite activity score.
+        Combines: fire density, frontline movement, sector area change.
+        """
+        from shapely.geometry import box as shapely_box, Point
+        from datetime import datetime as _dt, timedelta as _td
+
+        # Get fires
+        try:
+            fires = firms.fetch_fires("24h")
+        except Exception:
+            fires = []
+
+        # Current + past geometry
+        ds_now = ds.fetch_date(date_str)
+        if not ds_now:
+            return []
+
+        try:
+            d = _dt.strptime(date_str, "%Y%m%d")
+            past_str = (d - _td(days=lookback)).strftime("%Y%m%d")
+        except Exception:
+            return []
+
+        ds_past = ds.fetch_date(past_str)
+
+        now_geom = shape(ds_now)
+        if not now_geom.is_valid:
+            now_geom = now_geom.buffer(0)
+        past_geom = shape(ds_past) if ds_past else None
+        if past_geom and not past_geom.is_valid:
+            past_geom = past_geom.buffer(0)
+
+        results = []
+        for name, west, south, east, north in HottestSectors.SECTORS:
+            sector_box = shapely_box(west, south, east, north)
+
+            # Fire count in sector
+            fire_count = sum(
+                1 for f in fires
+                if west <= float(f.get("longitude", 0)) <= east
+                and south <= float(f.get("latitude", 0)) <= north
+            )
+
+            # Area change in sector
+            area_change = 0.0
+            if past_geom:
+                now_clip = now_geom.intersection(sector_box)
+                past_clip = past_geom.intersection(sector_box)
+                if not now_clip.is_empty and not past_clip.is_empty:
+                    now_a = analytics.area_km2(now_clip)
+                    past_a = analytics.area_km2(past_clip)
+                    area_change = now_a - past_a
+
+            # Frontline length in sector
+            fl_in_sector = 0.0
+            boundary = now_geom.boundary.intersection(sector_box)
+            if not boundary.is_empty:
+                boundary_utm = shapely_transform(_to_utm, boundary)
+                fl_in_sector = boundary_utm.length / 1000
+
+            # Composite score: normalize and weight
+            fire_score = min(fire_count / 50, 1.0)  # 50+ fires = max
+            change_score = min(abs(area_change) / 20, 1.0)  # 20+ km² change = max
+            fl_score = min(fl_in_sector / 200, 1.0)  # 200+ km frontline = max
+
+            activity = round((fire_score * 0.5 + change_score * 0.3 + fl_score * 0.2) * 100)
+
+            level = "HIGH" if activity >= 50 else "MEDIUM" if activity >= 20 else "LOW"
+
+            results.append({
+                "name": name,
+                "fire_count": fire_count,
+                "area_change_km2": round(area_change, 1),
+                "frontline_km": round(fl_in_sector, 1),
+                "activity_score": activity,
+                "level": level,
+                "bbox": [west, south, east, north],
+            })
+
+        results.sort(key=lambda r: -r["activity_score"])
+        return results
+
+
 class DivgenSource:
     """
     Scrapes frontline data from divgen.ru (Russian-perspective OSINT map).

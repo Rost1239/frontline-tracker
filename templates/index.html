@@ -267,6 +267,22 @@ body .split-label { top: 70px; }
 .frontline-pulse { animation: dash-march 1.2s linear infinite; }
 
 /* ═══ Air raid alert indicator ═══ */
+/* Sector bars */
+.sector-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.sector-name { width: 80px; color: var(--t2); font-size: .6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.sector-bar-bg { flex: 1; height: 10px; background: var(--bg); border-radius: 3px; overflow: hidden; }
+.sector-bar-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+.sector-score { width: 30px; text-align: right; font-family: var(--mono); font-weight: 600; font-size: .6rem; flex-shrink: 0; }
+.sector-level { width: 36px; text-align: center; font-family: var(--mono); font-weight: 700; font-size: .55rem; padding: 1px 3px; border-radius: 3px; }
+.sector-level.HIGH { background: rgba(218,54,51,.2); color: var(--red); }
+.sector-level.MEDIUM { background: rgba(210,153,34,.2); color: var(--orange); }
+.sector-level.LOW { background: rgba(63,185,80,.1); color: var(--green); }
+.sector-detail { font-size: .5rem; color: var(--t2); font-family: var(--mono); }
+/* Briefing */
+.briefing-section { margin-bottom: 8px; }
+.briefing-heading { font-weight: 700; color: var(--accent); font-size: .62rem; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+.briefing-text { color: var(--t2); }
+
 .alert-badge {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: .58rem; font-family: var(--mono); font-weight: 600;
@@ -540,6 +556,21 @@ body .split-label { top: 70px; }
     <h3 class="sh">Heatmap</h3>
     <div class="mr"><span class="ml">Gained</span><span class="mv v-red" id="heatGained">—</span></div>
     <div class="mr"><span class="ml">Recaptured</span><span class="mv v-green" id="heatLost">—</span></div>
+  </div>
+
+  <!-- ── Hottest Sectors ── -->
+  <div class="is" id="sectorSection">
+    <h3 class="sh">Hottest Sectors</h3>
+    <div id="sectorGrid" style="font-size:11px"></div>
+  </div>
+
+  <!-- ── Daily Briefing ── -->
+  <div class="is" id="briefingSection">
+    <h3 class="sh" style="display:flex;justify-content:space-between;align-items:center">
+      Daily Briefing
+      <button class="export-btn" style="font-size:9px;padding:2px 6px" onclick="copyBriefing()" title="Copy to clipboard">Copy</button>
+    </h3>
+    <div id="briefingContent" style="font-size:11px;line-height:1.5;color:var(--text-dim)"></div>
   </div>
 
   <!-- ── Export ── -->
@@ -817,6 +848,10 @@ async function loadDateByIndex(idx) {
     if (document.getElementById('showHeatmap').checked) loadHeatmap();
     if (document.getElementById('showSalients').checked) { loadSalients(); }
     else if (document.getElementById('projGrid').innerHTML) { loadProjections(d); }
+
+    // Sectors + briefing (always load, lightweight)
+    loadSectors(d);
+    loadBriefing(d);
 
     // URL state
     updateURL(d);
@@ -1691,6 +1726,57 @@ function clearFires() {
 
 function reloadFires() {
   if (document.getElementById('showFires').checked) loadFires();
+}
+
+// ═══════════════════════════════════════════════════
+// HOTTEST SECTORS
+// ═══════════════════════════════════════════════════
+async function loadSectors(dateStr) {
+  const data = await api(`/api/sectors/${dateStr}?lookback=7`);
+  const grid = document.getElementById('sectorGrid');
+  if (!data || !data.length) { grid.innerHTML = '<span style="color:var(--t2)">No sector data</span>'; return; }
+  grid.innerHTML = data.map(s => `
+    <div class="sector-row">
+      <span class="sector-name" title="${s.name}">${s.name}</span>
+      <div class="sector-bar-bg">
+        <div class="sector-bar-fill" style="width:${s.activity_score}%;background:${
+          s.level === 'HIGH' ? 'var(--red)' : s.level === 'MEDIUM' ? 'var(--orange)' : 'var(--green)'
+        }"></div>
+      </div>
+      <span class="sector-score">${s.activity_score}</span>
+      <span class="sector-level ${s.level}">${s.level}</span>
+    </div>
+    <div class="sector-detail" style="padding-left:86px;margin-bottom:2px">
+      ${s.fire_count} fires · ${s.area_change_km2 >= 0 ? '+' : ''}${s.area_change_km2} km² · ${s.frontline_km} km front
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════
+// DAILY BRIEFING
+// ═══════════════════════════════════════════════════
+let lastBriefingText = '';
+async function loadBriefing(dateStr) {
+  const data = await api(`/api/briefing/${dateStr}`);
+  const el = document.getElementById('briefingContent');
+  if (!data || data.error) { el.innerHTML = '<span style="color:var(--t2)">No briefing data</span>'; return; }
+
+  let html = `<div style="font-weight:700;color:var(--accent);margin-bottom:6px;font-size:12px">${data.title}</div>`;
+  html += data.sections.map(s => `
+    <div class="briefing-section">
+      <div class="briefing-heading">${s.heading}</div>
+      <div class="briefing-text">${s.text}</div>
+    </div>
+  `).join('');
+  el.innerHTML = html;
+
+  // Store plain text for copy
+  lastBriefingText = data.title + '\n\n' + data.sections.map(s => s.heading + ': ' + s.text).join('\n\n');
+}
+
+function copyBriefing() {
+  if (!lastBriefingText) { toast('No briefing to copy'); return; }
+  navigator.clipboard.writeText(lastBriefingText).then(() => toast('Briefing copied to clipboard'));
 }
 
 // ═══════════════════════════════════════════════════
